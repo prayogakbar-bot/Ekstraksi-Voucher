@@ -3,31 +3,28 @@ name: Deploy to GitHub Pages
 on:
   push:
     branches:
-      - main  # ganti dengan branch utama repo kamu
+      - main  # atau master
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
-      - name: Set up Node.js
+      - name: Setup Node
         uses: actions/setup-node@v3
         with:
-          node-version: 20
+          node-version: '20'
 
-      - name: Install dependencies
-        run: |
-          npm install -g pnpm
-          pnpm install
+      - name: Install Dependencies
+        run: npm install
 
-      - name: Build project
-        run: pnpm run build  # sesuaikan dengan script build kamu
+      - name: Build
+        run: npm run build
 
-      - name: Deploy to GitHub Pages
+      - name: Deploy
         uses: JamesIves/github-pages-deploy-action@v4
         with:
-          branch: gh-pages  # branch tujuan GitHub Pages
-          folder: build      # folder hasil build
+          branch: gh-pages        # branch tujuan deploy
+          folder: build           # folder build project
           token: ${{ secrets.GH_PAT }}
