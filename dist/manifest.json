@@ -3,13 +3,13 @@
   "name": "VD Ekstraksi Voucher",
   "icons": [
     {
-      "src": "voucher-icon-8.png",
+      "src": "/voucher-icon-8.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "maskable any"
     }
   ],
-  "start_url": ".",
+  "start_url": "/",
   "display": "standalone",
   "theme_color": "#f97316",
   "background_color": "#ffffff"
