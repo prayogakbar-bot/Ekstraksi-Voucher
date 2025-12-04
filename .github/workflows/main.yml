@@ -3,31 +3,39 @@ name: Deploy React App to GitHub Pages
 on:
   push:
     branches:
-      - main  # Ganti dengan branch utama kamu jika berbeda
+      - main  # Ganti dengan branch utama kamu jika bukan "main"
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
+      # 1️⃣ Checkout kode
       - name: Checkout repository
         uses: actions/checkout@v3
 
+      # 2️⃣ Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
           node-version: 18
+          cache: 'npm'
 
+      # 3️⃣ Bersihkan cache npm supaya checksum error hilang
+      - name: Clear npm cache
+        run: npm cache clean --force
+
+      # 4️⃣ Install dependencies
       - name: Install dependencies
         run: npm install --legacy-peer-deps
 
-      - name: Build
+      # 5️⃣ Build React App
+      - name: Build React App
         run: npm run build
 
+      # 6️⃣ Deploy ke GitHub Pages
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./build
-          user_name: "github-actions"
-          user_email: "github-actions@github.com"
