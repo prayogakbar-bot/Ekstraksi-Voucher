@@ -3,49 +3,39 @@ name: Build and Deploy React App
 on:
   push:
     branches:
-      - main  # ganti sesuai branch utama repo-mu
+      - main  # atau branch default kamu
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Checkout repo
+      # 1. Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      # Step 2: Setup Node.js
+      # 2. Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
           node-version: 18
-          cache: 'pnpm'
 
-      # Step 3: Install pnpm globally
+      # 3. Install pnpm globally
       - name: Install pnpm
         run: npm install -g pnpm
 
-      # Step 4: Cache pnpm dependencies
-      - name: Cache pnpm store
-        uses: actions/cache@v3
-        with:
-          path: ~/.pnpm-store
-          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-
-
-      # Step 5: Install dependencies
+      # 4. Install dependencies using pnpm
       - name: Install dependencies
         run: pnpm install
 
-      # Step 6: Build React app
-      - name: Build
+      # 5. Build React app
+      - name: Build React app
         run: pnpm run build
 
-      # Step 7: Deploy to GitHub Pages
+      # 6. Deploy to GitHub Pages
       - name: Deploy to GitHub Pages
         uses: JamesIves/github-pages-deploy-action@v4
         with:
-          branch: gh-pages # branch tujuan deploy
-          folder: build     # folder hasil build React
-          token: ${{ secrets.GITHUB_TOKEN }} # token otomatis aman
+          branch: gh-pages       # branch target untuk deploy
+          folder: build          # folder hasil build React
+          token: ${{ secrets.GITHUB_TOKEN }}
