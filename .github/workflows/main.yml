@@ -10,23 +10,25 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: 18
-          cache: "npm"
+          cache: 'pnpm'
 
-      - name: Clean npm cache
-        run: npm cache clean --force
+      - name: Install PNPM
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
 
-      - name: Force install React Scripts from tarball
-        run: npm install --legacy-peer-deps --prefer-online --no-audit --no-fund
+      - name: Install dependencies
+        run: pnpm install --shamefully-hoist
 
-      - name: Build app
-        run: npm run build
+      - name: Build
+        run: pnpm run build
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
