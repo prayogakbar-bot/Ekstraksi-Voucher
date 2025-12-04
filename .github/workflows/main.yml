@@ -10,22 +10,25 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # 1. Ambil kode dari repository
       - name: Checkout repository
         uses: actions/checkout@v3
 
+      # 2. Setup Node.js versi 18
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
           node-version: '18'
 
+      # 3. Install dependencies (pakai legacy-peer-deps biar aman)
       - name: Install dependencies
-        run: |
-          npm ci --legacy-peer-deps
-          npm install ajv@8.12.0
+        run: npm install --legacy-peer-deps
 
+      # 4. Build project
       - name: Build project
         run: npm run build
 
+      # 5. Deploy ke GitHub Pages
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
         with:
