@@ -13,24 +13,30 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      # 🟩 INSTALL PNPM DULU
+      - name: Install PNPM
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+          run_install: false
+
+      # 🟩 SETUP NODE + PNPM CACHE
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 18
           cache: 'pnpm'
 
-      - name: Install PNPM
-        uses: pnpm/action-setup@v2
-        with:
-          version: 8
-
+      # 🟩 INSTALL DEPENDENCY
       - name: Install dependencies
         run: pnpm install --shamefully-hoist
 
+      # 🟩 BUILD PROJECT
       - name: Build
         run: pnpm run build
 
-      - name: Deploy to GitHub Pages
+      # 🟩 DEPLOY TO GH-PAGES
+      - name: Deploy
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
