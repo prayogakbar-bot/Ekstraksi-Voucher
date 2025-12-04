@@ -1,13 +1,13 @@
 {
   "files": {
-    "main.css": "/static/css/main.564c5ddb.css",
-    "main.js": "/static/js/main.bc1faeeb.js",
-    "index.html": "/index.html",
-    "main.564c5ddb.css.map": "/static/css/main.564c5ddb.css.map",
-    "main.bc1faeeb.js.map": "/static/js/main.bc1faeeb.js.map"
+    "main.css": "/Ekstraksi-Voucher/static/css/main.564c5ddb.css",
+    "main.js": "/Ekstraksi-Voucher/static/js/main.a5260ff4.js",
+    "index.html": "/Ekstraksi-Voucher/index.html",
+    "main.564c5ddb.css.map": "/Ekstraksi-Voucher/static/css/main.564c5ddb.css.map",
+    "main.a5260ff4.js.map": "/Ekstraksi-Voucher/static/js/main.a5260ff4.js.map"
   },
   "entrypoints": [
     "static/css/main.564c5ddb.css",
-    "static/js/main.bc1faeeb.js"
+    "static/js/main.a5260ff4.js"
   ]
 }
