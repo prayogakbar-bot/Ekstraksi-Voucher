@@ -1,0 +1,24 @@
+lockfileVersion: 8.6
+specifiers:
+  react: "^18.2.0"
+  react-dom: "^18.2.0"
+  react-scripts: "5.0.1"
+dependencies:
+  react:
+    version: 18.2.0
+    resolution: react@18.2.0
+  react-dom:
+    version: 18.2.0
+    resolution: react-dom@18.2.0
+  react-scripts:
+    version: 5.0.1
+    resolution: react-scripts@5.0.1
+packages:
+  /:
+    dependencies:
+      react: 18.2.0
+      react-dom: 18.2.0
+      react-scripts: 5.0.1
+    devDependencies: {}
+    peerDependencies: {}
+    optionalDependencies: {}

@@ -1,7 +1,8 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import './index.css';  // PENTING: import Tailwind di sini
+import './index.css';  // pastikan ini ada
 import App from './App';
+import reportWebVitals from './reportWebVitals';
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
@@ -9,3 +10,5 @@ root.render(
     <App />
   </React.StrictMode>
 );
+
+reportWebVitals();
