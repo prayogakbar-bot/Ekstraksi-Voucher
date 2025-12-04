@@ -1,16 +1,16 @@
-name: Build & Deploy React App
+name: Build and Deploy React App
 
 on:
   push:
     branches:
-      - main  # ubah sesuai branch utama kamu
+      - main   # atau ganti dengan branch default kamu
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checkout repository
+      # 1. Checkout kode
       - name: Checkout repository
         uses: actions/checkout@v3
 
@@ -18,7 +18,8 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: '20'  # gunakan versi Node yang sesuai
+          node-version: 20
+          cache: 'pnpm'
 
       # 3. Install pnpm
       - name: Install pnpm
@@ -36,6 +37,6 @@ jobs:
       - name: Deploy to GitHub Pages
         uses: JamesIves/github-pages-deploy-action@v4
         with:
-          branch: gh-pages  # target branch untuk Pages
-          folder: build     # folder hasil build React
-          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: gh-pages          # Branch tujuan untuk GitHub Pages
+          folder: build             # Folder hasil build React
+          token: ${{ secrets.GH_PAT }}  # Gunakan PAT, bukan default GITHUB_TOKEN
