@@ -3,7 +3,7 @@ name: Deploy React App to GitHub Pages
 on:
   push:
     branches:
-      - main  # ganti kalau branch utama bukan main
+      - main  # branch utama kamu
 
 jobs:
   build-and-deploy:
