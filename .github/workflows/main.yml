@@ -1,27 +1,42 @@
+name: Build and Deploy React App
+
+on:
+  push:
+    branches:
+      - main  # Ganti dengan branch utama repo-mu jika bukan main
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
 
+    steps:
+      # Checkout repository
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      # Setup Node.js dengan cache untuk pnpm
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
           node-version: '18'
           cache: 'pnpm'
 
+      # Install pnpm
       - name: Install pnpm
         run: npm install -g pnpm
 
+      # Install dependencies
       - name: Install dependencies
         run: pnpm install
 
+      # Build React app
       - name: Build
         run: pnpm run build
 
+      # Deploy to GitHub Pages
       - name: Deploy to GitHub Pages
         uses: JamesIves/github-pages-deploy-action@v4
         with:
-          branch: gh-pages
-          folder: build
+          branch: gh-pages        # Target branch untuk deploy
+          folder: build           # Folder hasil build
           token: ${{ secrets.GH_PAT }}
