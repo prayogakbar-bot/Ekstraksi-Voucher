@@ -3,35 +3,35 @@ name: Deploy React App to GitHub Pages
 on:
   push:
     branches:
-      - main
+      - main  # ganti sesuai branch utama kamu
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
+      # Checkout kode
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
+      # Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
           node-version: 18
 
-      # Hapus node_modules dan package-lock.json agar clean install
-      - name: Clean previous installs
-        run: |
-          rm -rf node_modules package-lock.json
-          npm cache clean --force
-
+      # Install dependencies
       - name: Install dependencies
         run: npm install --legacy-peer-deps --no-audit --prefer-offline --no-fund
 
-      - name: Build React App
+      # Build React app
+      - name: Build app
         run: npm run build
 
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v3
+      # Deploy ke GitHub Pages
+      - name: Deploy
+        uses: peaceiris/actions-gh-pages@v6
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./build
+          keep_files: true
