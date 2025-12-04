@@ -3,40 +3,39 @@ name: Build and Deploy React App
 on:
   push:
     branches:
-      - main  # Trigger build saat push ke main
+      - main
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Checkout repo
+      # Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      # Step 2: Setup Node.js
+      # Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
           node-version: '18'
-          cache: 'pnpm'
 
-      # Step 3: Install pnpm
+      # Install pnpm globally
       - name: Install pnpm
         run: npm install -g pnpm
 
-      # Step 4: Install dependencies
+      # Install dependencies
       - name: Install dependencies
         run: pnpm install
 
-      # Step 5: Build React app
+      # Build the app
       - name: Build
         run: pnpm run build
 
-      # Step 6: Deploy to GitHub Pages
+      # Deploy to GitHub Pages
       - name: Deploy to GitHub Pages
         uses: JamesIves/github-pages-deploy-action@v4
         with:
-          branch: gh-pages           # Target branch
-          folder: build              # Folder hasil build
-          token: ${{ secrets.GH_PAT }}  # Gunakan PAT yang sudah dibuat
+          branch: gh-pages
+          folder: build
+          token: ${{ secrets.GH_PAT }}
