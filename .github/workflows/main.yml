@@ -1,39 +1,45 @@
-name: Deploy React to GitHub Pages
+name: build-and-deploy
 
 on:
   push:
     branches:
       - main
-  workflow_dispatch:
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-
     steps:
+      # 1. Checkout repo
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Set up Node.js
+      # 2. Setup Node.js
+      - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
           node-version: 18
 
-      # Bersihkan cache npm untuk menghindari corrupted packages
-      - name: Clean npm cache
+      # 3. Clear npm cache
+      - name: Clear npm cache
         run: npm cache clean --force
 
-      # Install dependencies fresh tanpa cache
+      # 4. Remove old node_modules & lockfile
+      - name: Clean workspace
+        run: |
+          rm -rf node_modules
+          rm -f package-lock.json
+
+      # 5. Install dependencies
       - name: Install dependencies
         run: npm install --legacy-peer-deps
 
-      # Build React app
-      - name: Build React app
+      # 6. Build project
+      - name: Build
         run: npm run build
 
-      # Deploy ke GitHub Pages
-      - name: Deploy to GitHub Pages
-        uses: actions/deploy-pages@v4
+      # 7. Deploy to GitHub Pages
+      - name: Deploy
+        uses: JamesIves/github-pages-deploy-action@v4
         with:
           branch: gh-pages
           folder: build
