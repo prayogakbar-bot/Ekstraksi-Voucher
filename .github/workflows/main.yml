@@ -1,42 +1,41 @@
-name: Build and Deploy React + Tailwind App
+name: Build & Deploy React App
 
 on:
   push:
     branches:
-      - main  # ganti sesuai branch utama
+      - main  # ubah sesuai branch utama kamu
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
-      # 1️⃣ Checkout kode
+      # 1. Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      # 2️⃣ Setup Node.js
+      # 2. Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: '20'
-          cache: 'pnpm'
+          node-version: '20'  # gunakan versi Node yang sesuai
 
-      # 3️⃣ Install pnpm
+      # 3. Install pnpm
       - name: Install pnpm
         run: npm install -g pnpm
 
-      # 4️⃣ Install dependencies
+      # 4. Install dependencies
       - name: Install dependencies
         run: pnpm install
 
-      # 5️⃣ Build Tailwind + React
+      # 5. Build React app
       - name: Build
         run: pnpm run build
 
-      # 6️⃣ Deploy to GitHub Pages
+      # 6. Deploy to GitHub Pages
       - name: Deploy to GitHub Pages
         uses: JamesIves/github-pages-deploy-action@v4
         with:
-          branch: gh-pages        # branch tujuan
-          folder: build           # folder hasil build React
-          token: ${{ secrets.GH_PAT }}
+          branch: gh-pages  # target branch untuk Pages
+          folder: build     # folder hasil build React
+          token: ${{ secrets.GITHUB_TOKEN }}
