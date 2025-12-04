@@ -10,28 +10,32 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Checkout code
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Setup Node.js version
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
           node-version: 18
+          cache: "npm"
 
-      # Install dependencies (aman untuk React Scripts 5)
+      # FIX EINTEGRITY: bersihkan cache npm
+      - name: Clean npm cache
+        run: npm cache clean --force
+
+      # FIX EINTEGRITY: pakai full online registry
+      - name: Set npm registry
+        run: npm config set registry https://registry.npmjs.org/
+
+      # FIX EINTEGRITY: force online install
       - name: Install dependencies
-        run: npm install --legacy-peer-deps --no-audit --prefer-offline --no-fund
+        run: npm install --legacy-peer-deps --prefer-online --no-audit --no-fund
 
-      # Build React app
       - name: Build app
         run: npm run build
 
-      # Deploy to GitHub Pages using v3 (versi stabil)
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./build
-          keep_files: true
