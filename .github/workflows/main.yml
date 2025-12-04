@@ -3,39 +3,40 @@ name: Build and Deploy React App
 on:
   push:
     branches:
-      - main
+      - main  # Trigger workflow saat push ke branch main
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
-      # 1️⃣ Checkout repo
+      # Checkout kode repo
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      # 2️⃣ Setup Node.js
+      # Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
           node-version: 18
+          cache: 'pnpm'
 
-      # 3️⃣ Setup pnpm
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v2
-        with:
-          version: 8 # sesuaikan versi pnpm yang kamu pakai
+      # Install pnpm
+      - name: Install pnpm
+        run: npm install -g pnpm
 
-      # 4️⃣ Install dependencies dengan pnpm
+      # Install dependencies
       - name: Install dependencies
-        run: |
-          pnpm store prune       # bersihkan cache lama
-          pnpm install --frozen-lockfile
+        run: pnpm install
 
-      # 5️⃣ Build React app
+      # Build project
       - name: Build
         run: pnpm run build
 
-      # 6️⃣ Deploy ke GitHub Pages
-      - name: Deploy to GitHub Pages
-        uses: JamesIv
+      # Deploy ke GitHub Pages
+      - name: Deploy
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          branch: gh-pages          # branch tujuan deployment
+          folder: build             # folder hasil build React
+          token: ${{ secrets.GITHUB_TOKEN }}  # gunakan token rahasia GitHub
