@@ -1,9 +1,9 @@
-name: Build & Deploy
+name: Deploy to GitHub Pages
 
 on:
   push:
     branches:
-      - main  # ganti sesuai branch utama kamu
+      - main  # Ganti dengan branch utama kamu
 
 jobs:
   build-and-deploy:
@@ -19,7 +19,6 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: '18'
-          cache: 'pnpm'
 
       # 3. Install pnpm
       - name: Install pnpm
@@ -31,12 +30,12 @@ jobs:
 
       # 5. Build project
       - name: Build project
-        run: pnpm run build
+        run: pnpm run build  # Sesuaikan jika script build berbeda
 
       # 6. Deploy ke GitHub Pages
       - name: Deploy to GitHub Pages
         uses: JamesIves/github-pages-deploy-action@v4
         with:
-          branch: gh-pages       # branch tujuan
-          folder: build          # folder hasil build (ubah kalau berbeda)
-          token: ${{ secrets.GH_PAT }}
+          branch: gh-pages  # Branch target untuk deploy
+          folder: build     # Folder hasil build
+          token: ${{ secrets.GH_PAT }}  # Pastikan sudah ditambahkan di repo secrets
