@@ -1,4 +1,4 @@
-name: build-and-deploy
+name: Deploy React to GitHub Pages
 
 on:
   push:
@@ -8,38 +8,26 @@ on:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+
     steps:
-      # 1. Checkout repo
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      # 2. Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: 18
+          node-version: '18'
 
-      # 3. Clear npm cache
-      - name: Clear npm cache
-        run: npm cache clean --force
-
-      # 4. Remove old node_modules & lockfile
-      - name: Clean workspace
-        run: |
-          rm -rf node_modules
-          rm -f package-lock.json
-
-      # 5. Install dependencies
       - name: Install dependencies
-        run: npm install --legacy-peer-deps
+        run: |
+          npm ci --legacy-peer-deps
+          npm install ajv@8.12.0
 
-      # 6. Build project
-      - name: Build
+      - name: Build project
         run: npm run build
 
-      # 7. Deploy to GitHub Pages
-      - name: Deploy
-        uses: JamesIves/github-pages-deploy-action@v4
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
         with:
-          branch: gh-pages
-          folder: build
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./build
