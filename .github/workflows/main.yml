@@ -1,34 +1,41 @@
-name: Deploy React App to GitHub Pages
+name: Build and Deploy React App to GitHub Pages
 
 on:
   push:
     branches:
-      - main
+      - main  # Trigger workflow setiap ada push ke main
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+
     steps:
+      # 1. Checkout repository
       - uses: actions/checkout@v3
 
+      # 2. Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 18
 
+      # 3. Setup pnpm
       - uses: pnpm/action-setup@v2
         with:
           version: 8
 
+      # 4. Install dependencies
       - name: Install dependencies
         run: pnpm install
 
+      # 5. Build React app
       - name: Build
         run: pnpm run build
 
+      # 6. Deploy to GitHub Pages
       - name: Deploy to GitHub Pages
         uses: JamesIves/github-pages-deploy-action@v4
         with:
-          branch: gh-pages
-          folder: build
-          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: gh-pages        # branch target untuk GitHub Pages
+          folder: build           # folder hasil build React
+          token: ${{ secrets.GITHUB_TOKEN }} # token resmi dari GitHub Actions
