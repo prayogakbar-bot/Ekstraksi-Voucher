@@ -3,39 +3,37 @@ name: Deploy React App to GitHub Pages
 on:
   push:
     branches:
-      - main  # Ganti dengan branch utama kamu jika bukan 'main'
+      - main  # Ganti dengan branch utama kamu
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
-      # 1️⃣ Checkout repo
-      - name: Checkout repository
-        uses: actions/checkout@v3
+    - name: Checkout repository
+      uses: actions/checkout@v3
 
-      # 2️⃣ Setup Node.js
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: '18.x'  # Bisa diganti 20.x jika mau
-          cache: 'npm'
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: 18
 
-      # 3️⃣ Bersihkan npm cache (mengatasi corrupt package)
-      - name: Clean npm cache
-        run: npm cache clean --force
+    - name: Remove node_modules and lock file
+      run: |
+        rm -rf node_modules
+        rm -f package-lock.json
 
-      # 4️⃣ Install dependencies
-      - name: Install dependencies
-        run: npm install --legacy-peer-deps --force
+    - name: Clean npm cache
+      run: npm cache clean --force
 
-      # 5️⃣ Build React app
-      - name: Build React App
-        run: npm run build
+    - name: Install dependencies
+      run: npm install --legacy-peer-deps --force
 
-      # 6️⃣ Deploy ke GitHub Pages
-      - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./build
+    - name: Build React app
+      run: npm run build
+
+    - name: Deploy to GitHub Pages
+      uses: peaceiris/actions-gh-pages@v4
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./build
