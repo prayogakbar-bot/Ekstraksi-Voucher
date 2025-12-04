@@ -2,7 +2,6 @@
   "name": "ekstraksi-voucher",
   "version": "0.1.0",
   "private": true,
-  "homepage": "https://timvd.online",
   "homepage": "https://prayogakbar-bot.github.io/Ekstraksi-Voucher",
   "dependencies": {
     "react": "18.2.0",
@@ -10,7 +9,7 @@
     "ajv": "6.12.6",
     "ajv-keywords": "3.5.2",
     "firebase": "9.23.0",
-    "@google/genai": "^1.0.0"
+    "@google/genai": "^1.0.0",
     "web-vitals": "^2.1.4"
   },
   "devDependencies": {
