@@ -3,34 +3,34 @@ name: Deploy React to GitHub Pages
 on:
   push:
     branches:
-      - main
-  workflow_dispatch: # untuk manual run
+      - main   # jalankan saat ada push ke main
+  workflow_dispatch:  # bisa dijalankan manual juga
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checkout repository
+      # 1. Checkout kode dari repo
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      # 2. Setup Node.js
+      # 2. Setup Node.js versi 18
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: 18
+          node-version: '18'
 
       # 3. Install dependencies
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       # 4. Build React app
-      - name: Build React app
+      - name: Build project
         run: npm run build
 
-      # 5. Deploy to GitHub Pages
+      # 5. Deploy folder build ke GitHub Pages
       - name: Deploy to GitHub Pages
         uses: actions/deploy-pages@v4
         with:
-          artifact-path: build
+          folder: build
