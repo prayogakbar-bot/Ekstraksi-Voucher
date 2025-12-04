@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { GoogleGenAI } from '@google/genai'; 
 
-// --- IMPOR FIREBASE SEBENARNYA (DITAMBAH UNTUK HISTORY) ---
+// --- IMPOR FIREBASE SEBENARNYA ---
 import { 
     initializeApp 
 } from "firebase/app";
@@ -10,10 +10,10 @@ import {
     doc, 
     setDoc, 
     serverTimestamp, 
-    collection, // <-- Baru
-    query,      // <-- Baru
-    getDocs,    // <-- Baru
-    orderBy     // <-- Baru
+    collection, 
+    query,      
+    getDocs,    
+    orderBy     
 } from "firebase/firestore";
 // ----------------------------------------------------
 
@@ -34,7 +34,7 @@ const FIREBASE_CONFIG = {
 // -----------------------------------------------------
 
 const TARGET_DIGITS_REQUIRED = 18;
-const DB_COLLECTION_NAME = 'extracted_vouchers'; // Koleksi tempat data disimpan
+const DB_COLLECTION_NAME = 'extracted_vouchers'; 
 const IMAGE_MAX_WIDTH = 1200;
 const IMAGE_QUALITY = 0.8;
 const appId = 'default-app-id'; 
@@ -46,7 +46,7 @@ const db = getFirestore(app);
 // -------------------------------------
 
 
-// --- UTILITY UNTUK RESIZE GAMBAR & KONVERSI BASE64 (TIDAK BERUBAH) ---
+// --- UTILITY UNTUK RESIZE GAMBAR & KONVERSI BASE64 ---
 const resizeImageAndConvertToBase64 = (file) => {
     return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -82,7 +82,7 @@ const resizeImageAndConvertToBase64 = (file) => {
 };
 
 
-// --- FUNGSI INTEGRASI GEMINI API (TIDAK BERUBAH) ---
+// --- FUNGSI INTEGRASI GEMINI API ---
 const ai = new GoogleGenAI({ 
     apiKey: GEMINI_API_KEY, 
 });
@@ -124,10 +124,56 @@ async function callGeminiApi(base64Image, prompt, fileName) {
         throw new Error(`Gagal memanggil Gemini API untuk ${fileName}. Pesan: ${error.message || 'Error tidak diketahui'}.`);
     }
 }
-// ---------------------------------------------------
+
 
 // =======================================================================
-// === KOMPONEN HISTORY PAGE (TIDAK BERUBAH) ===
+// === KOMPONEN NAVIGASI BAWAH UNTUK PONSEL (BottomNavBar) ===
+// =======================================================================
+function BottomNavBar({ currentPage, handleNavigate }) {
+    // `lg:hidden` menyembunyikan navigasi ini di layar besar
+    return (
+        <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 shadow-2xl">
+            <div className="flex justify-around items-center h-16">
+                {/* Tombol Ekstraksi */}
+                <button
+                    onClick={() => handleNavigate('extraction')}
+                    className={`flex flex-col items-center p-2 text-xs font-semibold transition duration-200 ${currentPage === 'extraction' ? 'text-navy-accent' : 'text-gray-500 hover:text-navy-accent'}`}
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">
+                        <path d="M7 3a1 1 0 000 2h6a1 1 0 100-2H7zM4 9a1 1 0 100 2h12a1 1 0 100-2H4zM7 15a1 1 0 100 2h6a1 1 0 100-2H7z" />
+                    </svg>
+                    <span>Ekstraksi</span>
+                </button>
+
+                {/* Tombol Arsip / History */}
+                <button
+                    onClick={() => handleNavigate('history')}
+                    className={`flex flex-col items-center p-2 text-xs font-semibold transition duration-200 ${currentPage === 'history' ? 'text-navy-accent' : 'text-gray-500 hover:text-navy-accent'}`}
+                >
+                     <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+                    </svg>
+                    <span>Arsip</span>
+                </button>
+                
+                 {/* Tombol Logout */}
+                <button
+                    onClick={() => { localStorage.removeItem('isLoggedIn'); window.location.reload(); }} 
+                    className={`flex flex-col items-center p-2 text-xs font-semibold transition duration-200 text-gray-500 hover:text-red-500`}
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                    </svg>
+                    <span>Logout</span>
+                </button>
+            </div>
+        </div>
+    );
+}
+
+
+// =======================================================================
+// === KOMPONEN HISTORY PAGE (Responsif: Sidebar hidden di HP) ===
 // =======================================================================
 
 function HistoryPage({ userId, showStatus, handleNavigate }) {
@@ -145,7 +191,6 @@ function HistoryPage({ userId, showStatus, handleNavigate }) {
         setIsLoading(true);
         setError(null);
         try {
-            // Mengambil data dari Firestore dan mengurutkannya berdasarkan timestamp terbaru
             const q = query(collection(db, DB_COLLECTION_NAME), orderBy("timestamp", "desc"));
             const querySnapshot = await getDocs(q);
             
@@ -173,7 +218,6 @@ function HistoryPage({ userId, showStatus, handleNavigate }) {
     // Format timestamp
     const formatDate = (timestamp) => {
         if (!timestamp) return 'N/A';
-        // Mengubah objek Timestamp Firestore menjadi objek Date
         const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
         return date.toLocaleDateString('id-ID', {
             year: 'numeric',
@@ -184,11 +228,10 @@ function HistoryPage({ userId, showStatus, handleNavigate }) {
         });
     };
     
-    // Fungsi untuk membuat tombol Unduh CSV untuk riwayat
+    // Fungsi untuk membuat tombol Unduh CSV
     const downloadHistoryCodes = (codes) => {
         if (codes.length === 0) return;
         
-        const codesToDownload = codes.join('\n');
         const csvContent = codes.map(code => `"${code}"`).join('\n'); 
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
@@ -205,9 +248,9 @@ function HistoryPage({ userId, showStatus, handleNavigate }) {
         showStatus('File CSV riwayat berhasil diunduh.', 'success');
     };
     
-    // Sidebar HistoryPage
+    // Sidebar HistoryPage (Hidden di HP: hidden lg:flex)
     const sidebar = (
-        <div className="w-64 bg-white p-6 flex flex-col h-screen sticky top-0 shadow-lg border-r border-gray-200">
+        <div className="hidden lg:flex w-64 bg-white p-6 flex-col h-screen sticky top-0 shadow-lg border-r border-gray-200">
              <div className="flex items-center mb-10 pb-4 border-b border-gray-200">
                 <svg className="w-8 h-8 text-navy-accent mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 7a2 2 0 012 2v2m4-2h-3m4 2v7a2 2 0 01-2 2H5a2 2 0 01-2-2V9a2 2 0 012-2h2m2 4h10m0 0l-3 3m3-3l-3-3" />
@@ -294,11 +337,12 @@ function HistoryPage({ userId, showStatus, handleNavigate }) {
             );
         }
         
-        // --- Render List ---
+        // --- Render List (Responsif: Gunakan flex-col di HP) ---
         return (
             <div className="space-y-4">
                 {historyList.map((item, index) => (
-                    <div key={item.id} className="main-card p-5 flex justify-between items-center hover:shadow-lg transition duration-300">
+                    // Responsif: Ganti flex-row dengan flex-col di layar kecil (sm:flex-row)
+                    <div key={item.id} className="main-card p-5 flex flex-col sm:flex-row justify-between items-start sm:items-center hover:shadow-lg transition duration-300">
                         <div className="flex-grow">
                             <div className="flex items-baseline mb-1">
                                 <span className="text-3xl font-extrabold text-navy-accent mr-3">{item.count}</span>
@@ -310,7 +354,8 @@ function HistoryPage({ userId, showStatus, handleNavigate }) {
                             </p>
                         </div>
                         
-                        <div className="text-right flex flex-col items-end">
+                        {/* Responsif: Pindahkan tombol ke bawah di HP, berikan margin-top */}
+                        <div className="text-left sm:text-right flex flex-col items-start sm:items-end mt-4 sm:mt-0">
                             <p className="text-sm font-medium text-gray-800">
                                 {formatDate(item.timestamp)}
                             </p>
@@ -337,11 +382,14 @@ function HistoryPage({ userId, showStatus, handleNavigate }) {
             {/* Re-use CSS styles for consistency */}
             <style jsx global>{`
                 :root {
-                    --color-navy-accent: #0f172a; /* Slate-900 */
-                    --color-gold-accent: #fbbf24; /* Amber-400 */
-                    --color-main-bg: #ffffff; /* White */
-                    --color-panel-bg: #f9fafb; /* Gray-50 */
+                    --color-navy-accent: #0f172a; 
+                    --color-gold-accent: #fbbf24; 
+                    --color-main-bg: #ffffff; 
+                    --color-panel-bg: #f9fafb; 
                 }
+                .text-navy-accent { color: var(--color-navy-accent); }
+                .bg-navy-accent { background-color: var(--color-navy-accent); }
+                .bg-gold-accent { background-color: var(--color-gold-accent); }
                 .main-card {
                     background-color: var(--color-main-bg); 
                     border-radius: 12px;
@@ -354,12 +402,12 @@ function HistoryPage({ userId, showStatus, handleNavigate }) {
 
             {sidebar}
 
-            {/* --- KONTEN UTAMA HISTORY --- */}
-            <div className="flex-grow p-10 bg-gray-50">
-                 {/* HEADER */}
-                <header className="mb-10 flex justify-between items-center pb-4 border-b border-gray-200">
-                    <h2 className="text-3xl font-light text-gray-800 tracking-wider">Riwayat Ekstraksi Voucher</h2>
-                    <button onClick={() => fetchHistory()} className="flex items-center px-4 py-2 bg-gray-200 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-300 transition disabled:opacity-50" disabled={isLoading}>
+            {/* --- KONTEN UTAMA HISTORY (Added pb-20 for bottom nav space on mobile) --- */}
+            <div className="flex-grow p-5 lg:p-10 bg-gray-50 pb-20"> 
+                 {/* HEADER (Adjusted for mobile) */}
+                <header className="mb-6 lg:mb-10 flex flex-col sm:flex-row justify-between items-start sm:items-center pb-4 border-b border-gray-200">
+                    <h2 className="text-2xl sm:text-3xl font-light text-gray-800 tracking-wider mb-3 sm:mb-0">Riwayat Ekstraksi</h2>
+                    <button onClick={() => fetchHistory()} className="flex items-center px-3 py-1.5 sm:px-4 sm:py-2 bg-gray-200 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-300 transition disabled:opacity-50" disabled={isLoading}>
                         <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 mr-1 ${isLoading ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.962 8.962 0 0112 20c-3.132 0-6.062-1.233-8-3.232l1.424-1.424M14 12V4m-2 2h6" />
                         </svg>
@@ -375,7 +423,7 @@ function HistoryPage({ userId, showStatus, handleNavigate }) {
 
 
 // =======================================================================
-// === KOMPONEN UTAMA DASHBOARD (Diperbarui untuk waktu saat ini) ===
+// === KOMPONEN UTAMA DASHBOARD (Responsif: Sidebar hidden di HP) ===
 // =======================================================================
 
 function AppContainer({ showStatus, userId, handleLogout, currentPage, handleNavigate }) {
@@ -416,7 +464,7 @@ function AppContainer({ showStatus, userId, handleLogout, currentPage, handleNav
             hour: '2-digit',
             minute: '2-digit',
             second: '2-digit',
-            hour12: false // Menggunakan format 24 jam
+            hour12: false 
         }).format(date);
     };
     // ==========================================================
@@ -453,7 +501,7 @@ function AppContainer({ showStatus, userId, handleLogout, currentPage, handleNav
             count: codesList.uniqueList.length,
             // Menyimpan daftar nama file yang diproses
             sourceFiles: files.map(f => f.name), 
-            timestamp: serverTimestamp(), // Menggunakan timestamp Firestore
+            timestamp: serverTimestamp(), 
         };
 
         try {
@@ -694,7 +742,7 @@ function AppContainer({ showStatus, userId, handleLogout, currentPage, handleNav
         return potentialMatches;
     };
     
-    // --- RENDER FUNCTIONS (TIDAK BERUBAH) ---
+    // --- RENDER FUNCTIONS ---
     const renderDuplicateList = () => {
         const duplicateList = uniqueCodesList.duplicateList;
         if (duplicateList.length === 0) {
@@ -769,14 +817,17 @@ function AppContainer({ showStatus, userId, handleLogout, currentPage, handleNav
     return (
         <div className="min-h-screen bg-gray-50 flex">
             
-            {/* --- CUSTOM CSS STYLES (Sama seperti sebelumnya) --- */}
+            {/* --- CUSTOM CSS STYLES (Penyesuaian untuk thumbnail responsif) --- */}
             <style jsx global>{`
                 :root {
-                    --color-navy-accent: #0f172a; /* Slate-900 */
-                    --color-gold-accent: #fbbf24; /* Amber-400 */
-                    --color-main-bg: #ffffff; /* White */
-                    --color-panel-bg: #f9fafb; /* Gray-50 */
+                    --color-navy-accent: #0f172a; 
+                    --color-gold-accent: #fbbf24; 
+                    --color-main-bg: #ffffff; 
+                    --color-panel-bg: #f9fafb; 
                 }
+                .text-navy-accent { color: var(--color-navy-accent); }
+                .bg-navy-accent { background-color: var(--color-navy-accent); }
+                .bg-gold-accent { background-color: var(--color-gold-accent); }
                 .main-card {
                     background-color: var(--color-main-bg); 
                     border-radius: 12px;
@@ -796,15 +847,23 @@ function AppContainer({ showStatus, userId, handleLogout, currentPage, handleNav
                 }
                 .custom-file-upload:hover { border-color: var(--color-navy-accent); background-color: #e5e7eb; }
                 #image-upload { display: none; }
+                /* RESPONSIVE THUMBNAIL SIZE */
                 .image-thumbnail-wrapper {
                     border: 1px solid #d1d5db; 
-                    width: 100px;
-                    height: 100px;
-                    margin: 8px;
+                    width: 80px; /* Smaller for mobile */
+                    height: 80px; /* Smaller for mobile */
+                    margin: 4px; /* Smaller margin for mobile */
                     border-radius: 8px;
                     overflow: hidden;
                     box-shadow: 0 1px 2px rgba(0,0,0,0.05);
                     position: relative;
+                }
+                @media (min-width: 1024px) { /* Restore size for desktop */
+                     .image-thumbnail-wrapper {
+                        width: 100px;
+                        height: 100px;
+                        margin: 8px;
+                    }
                 }
                 .image-thumbnail {
                     width: 100%;
@@ -858,8 +917,8 @@ function AppContainer({ showStatus, userId, handleLogout, currentPage, handleNav
                     }
                 `}</style>
             
-            {/* --- SIDEBAR NAVIGASI KIRI (Fixed) --- */}
-            <div className="w-64 bg-white p-6 flex flex-col h-screen sticky top-0 shadow-lg border-r border-gray-200">
+            {/* --- SIDEBAR NAVIGASI KIRI (Hidden di HP: hidden lg:flex) --- */}
+            <div className="hidden lg:flex w-64 bg-white p-6 flex-col h-screen sticky top-0 shadow-lg border-r border-gray-200">
                 <div className="flex items-center mb-10 pb-4 border-b border-gray-200">
                     <svg className="w-8 h-8 text-navy-accent mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 7a2 2 0 012 2v2m4-2h-3m4 2v7a2 2 0 01-2 2H5a2 2 0 01-2-2V9a2 2 0 012-2h2m2 4h10m0 0l-3 3m3-3l-3-3" />
@@ -913,38 +972,38 @@ function AppContainer({ showStatus, userId, handleLogout, currentPage, handleNav
                 </div>
             </div>
 
-            {/* --- KONTEN UTAMA --- */}
-            <div className="flex-grow p-10 bg-gray-50">
-                 {/* HEADER KONVENSI */}
-                <header className="mb-10 flex justify-between items-center pb-4 border-b border-gray-200">
-                    <h2 className="text-3xl font-light text-gray-800 tracking-wider">Dashboard Ekstraksi Voucher</h2>
-                    <p className="text-sm text-gray-500">Panel v1.0 | Selamat datang, <span className='font-semibold'>Admin</span></p>
+            {/* --- KONTEN UTAMA (Added pb-20 for bottom nav space on mobile) --- */}
+            <div className="flex-grow p-5 lg:p-10 bg-gray-50 pb-20"> 
+                 {/* HEADER KONVENSI (Adjusted for mobile) */}
+                <header className="mb-6 lg:mb-10 flex flex-col sm:flex-row justify-between items-start sm:items-center pb-4 border-b border-gray-200">
+                    <h2 className="text-2xl sm:text-3xl font-light text-gray-800 tracking-wider mb-3 sm:mb-0">Dashboard Ekstraksi</h2>
+                    <p className="text-sm text-gray-500">Panel v1.0 | Selamat datang, <span className='font-semibold'>Tampan</span></p>
                 </header>
 
-                {/* VISUALISASI RINGKASAN DATA (Card Light Premium) */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-10">
+                {/* VISUALISASI RINGKASAN DATA (Responsif: grid-cols-1 md:grid-cols-3) */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 lg:gap-8 mb-6 lg:mb-10">
                     {/* Card 1: Total Files */}
-                    <div className="main-card p-6 border-l-4 border-navy-accent hover:shadow-lg transition duration-300">
+                    <div className="main-card p-4 lg:p-6 border-l-4 border-navy-accent hover:shadow-lg transition duration-300">
                         <p className="text-sm font-medium text-gray-500">Total File Diunggah</p>
                         <div className="flex items-center mt-1">
-                            <span className="text-4xl font-extrabold text-gray-800">{uploadedFiles.length}</span>
+                            <span className="text-3xl lg:text-4xl font-extrabold text-gray-800">{uploadedFiles.length}</span>
                             <span className="ml-2 text-sm text-navy-accent font-semibold">Gambar</span>
                         </div>
                     </div>
                     {/* Card 2: Total Codes */}
-                    <div className="main-card p-6 border-l-4 border-gold-accent hover:shadow-lg transition duration-300">
+                    <div className="main-card p-4 lg:p-6 border-l-4 border-gold-accent hover:shadow-lg transition duration-300">
                         <p className="text-sm font-medium text-gray-500">Kode Unik Ditemukan</p>
                         <div className="flex items-center mt-1">
-                            <span className="text-4xl font-extrabold text-gray-800">{codeCount}</span>
+                            <span className="text-3xl lg:text-4xl font-extrabold text-gray-800">{codeCount}</span>
                             <span className="ml-2 text-sm text-gold-accent font-semibold">Kode 18 Digit</span>
                         </div>
                     </div>
                     
                     {/* Card 3: Aktivitas Terakhir (Diperbarui) */}
-                     <div className="main-card p-6 border-l-4 border-gray-300 hover:shadow-lg transition duration-300">
+                     <div className="main-card p-4 lg:p-6 border-l-4 border-gray-300 hover:shadow-lg transition duration-300">
                         <p className="text-sm font-medium text-gray-500">Aktivitas Terkini</p>
                         <div className="mt-1">
-                            <span className="text-lg font-extrabold text-gray-800 block">
+                            <span className="text-base lg:text-lg font-extrabold text-gray-800 block">
                                 {formatDateTime(currentTime)}
                             </span>
                             <span className='text-xs text-green-500 font-semibold block mt-1'>
@@ -954,7 +1013,7 @@ function AppContainer({ showStatus, userId, handleLogout, currentPage, handleNav
                     </div>
                 </div>
 
-                {/* GRID UTAMA (Upload/Process Kiri, Results Kanan) */}
+                {/* GRID UTAMA (Responsif: grid-cols-1 lg:grid-cols-3) */}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                     
                     {/* --- KOLOM KIRI (Upload & Process) --- */}
@@ -1045,8 +1104,8 @@ function AppContainer({ showStatus, userId, handleLogout, currentPage, handleNav
                         
                         {/* 3. UNIQUE CODES (Hasil Murni) */}
                         <div id="unique-codes-card" className="main-card p-6">
-                            <div className="flex justify-between items-center mb-4 border-b border-gray-200 pb-3">
-                                <h2 className="text-xl font-bold text-title flex items-center">
+                            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 border-b border-gray-200 pb-3">
+                                <h2 className="text-xl font-bold text-title flex items-center mb-2 sm:mb-0">
                                     <span className="bg-navy-accent text-white rounded-full w-6 h-6 flex items-center justify-center mr-3 text-sm font-bold">3</span> 
                                     Kode Unik Ditemukan
                                 </h2>
@@ -1067,7 +1126,7 @@ function AppContainer({ showStatus, userId, handleLogout, currentPage, handleNav
                             
                             <p className="text-xs text-gray-500 mt-2">Daftar kode unik 18 digit.</p>
                             
-                            {/* Actions Group */}
+                            {/* Actions Group (Responsif: flex-col di HP) */}
                             <div className="flex flex-col sm:flex-row justify-end items-end sm:items-center space-y-3 sm:space-y-0 sm:space-x-3 mt-5 border-t border-gray-200 pt-5">
                                 {/* Filename Input */}
                                 <input 
@@ -1118,7 +1177,7 @@ function AppContainer({ showStatus, userId, handleLogout, currentPage, handleNav
                             </div>
                         </div>
 
-                        {/* 4. DETAIL SECTION (Pemisah Hasil, Duplikat & Potensi) */}
+                        {/* 4. DETAIL SECTION (Responsif: grid-cols-1 md:grid-cols-2) */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                             
                             {/* DUPLICATE CODES (Kiri) */}
@@ -1197,10 +1256,9 @@ function AppContainer({ showStatus, userId, handleLogout, currentPage, handleNav
 }
 
 // =======================================================================
-// === KOMPONEN LOGIN SCREEN (DIPERBARUI) ===
+// === KOMPONEN LOGIN SCREEN (RESPONSIVE) ===
 // =======================================================================
 function LoginScreen({ handleLogin, statusMessage }) {
-    // UPDATED: Default kosong ('')
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState(''); 
     const [loading, setLoading] = useState(false);
@@ -1216,7 +1274,7 @@ function LoginScreen({ handleLogin, statusMessage }) {
     };
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-gray-100">
+        <div className="min-h-screen flex items-center justify-center bg-gray-100 p-4"> 
             <style jsx global>{`
                 .login-card {
                     background-color: white;
@@ -1224,23 +1282,28 @@ function LoginScreen({ handleLogin, statusMessage }) {
                     box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 5px 10px -5px rgba(0, 0, 0, 0.04);
                     border: 1px solid #e5e7eb;
                     width: 100%;
-                    max-width: 400px;
+                    max-width: 400px; 
                 }
                 .input-field {
-                    border: 1px solid #d1d5db; /* Gray-300 */
+                    border: 1px solid #d1d5db; 
                     border-radius: 8px;
                     padding: 0.75rem;
                     width: 100%;
                     transition: border-color 0.2s, box-shadow 0.2s;
                 }
                 .input-field:focus {
-                    border-color: #0f172a; /* Navy Accent */
+                    border-color: #0f172a; 
                     box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.1);
                     outline: none;
                 }
+                .text-navy-accent { color: #0f172a; }
+                .bg-navy-accent { background-color: #0f172a; }
+                .focus\:ring-navy-accent\/50:focus {
+                    --tw-ring-color: rgba(15, 23, 42, 0.5); 
+                }
             `}</style>
             
-            <div className="login-card p-8">
+            <div className="login-card p-6 sm:p-8"> 
                 <div className="flex flex-col items-center mb-6">
                     <svg className="w-10 h-10 text-navy-accent mb-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 7a2 2 0 012 2v2m4-2h-3m4 2v7a2 2 0 01-2 2H5a2 2 0 01-2-2V9a2 2 0 012-2h2m2 4h10m0 0l-3 3m3-3l-3-3" />
@@ -1289,9 +1352,10 @@ function LoginScreen({ handleLogin, statusMessage }) {
                             required
                         />
                     </div>
+                    {/* PERUBAHAN CLASSNAME TOMBOL LOGIN DISINI */}
                     <button
                         type="submit"
-                        className="w-full py-3 bg-navy-accent text-white font-semibold rounded-lg shadow-md hover:bg-slate-700 transition duration-200 disabled:opacity-50 flex items-center justify-center"
+                        className="w-full py-4 bg-navy-accent text-white font-bold rounded-xl shadow-xl hover:bg-slate-700 hover:shadow-2xl transition duration-300 disabled:opacity-50 flex items-center justify-center focus:outline-none focus:ring-4 focus:ring-navy-accent/50"
                         disabled={loading}
                     >
                         {loading ? (
@@ -1319,7 +1383,7 @@ function LoginScreen({ handleLogin, statusMessage }) {
 function App() {
     const [isLoggedIn, setIsLoggedIn] = useState(false);
     const [userId, setUserId] = useState(null);
-    const [currentPage, setCurrentPage] = useState('extraction'); // NEW STATE FOR ROUTING
+    const [currentPage, setCurrentPage] = useState('extraction'); 
     const [statusMessage, setStatusMessage] = useState({ text: '', type: 'info', visible: false });
 
     const showStatus = useCallback((text, type = 'info') => {
@@ -1336,9 +1400,9 @@ function App() {
 
     // Fungsi Logout yang sebenarnya
     const handleLogout = () => {
-        localStorage.removeItem('isLoggedIn'); // Hapus sesi dari penyimpanan lokal
-        setIsLoggedIn(false); // Reset status login
-        setUserId(null); // Hapus ID pengguna
+        localStorage.removeItem('isLoggedIn'); 
+        setIsLoggedIn(false); 
+        setUserId(null); 
         showStatus('Anda telah berhasil Logout.', 'info');
     };
 
@@ -1403,6 +1467,7 @@ function App() {
                         />
                     )}
                     {renderStatusPopup()}
+                    <BottomNavBar currentPage={currentPage} handleNavigate={handleNavigate} />
                 </>
             ) : (
                 <LoginScreen 
@@ -1414,4 +1479,5 @@ function App() {
     );
 }
 
+// === BARIS KRITIS UNTUK MEMPERBAIKI ERROR 'module has no exports' ===
 export default App;
