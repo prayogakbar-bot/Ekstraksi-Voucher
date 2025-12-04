@@ -1,16 +1,16 @@
-name: Deploy to GitHub Pages
+name: Build & Deploy
 
 on:
   push:
     branches:
-      - main  # atau branch utama kamu
+      - main  # ganti sesuai branch utama kamu
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checkout repo
+      # 1. Checkout kode
       - name: Checkout repository
         uses: actions/checkout@v3
 
@@ -18,7 +18,8 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: 18
+          node-version: '18'
+          cache: 'pnpm'
 
       # 3. Install pnpm
       - name: Install pnpm
@@ -29,13 +30,13 @@ jobs:
         run: pnpm install
 
       # 5. Build project
-      - name: Build
-        run: pnpm build
+      - name: Build project
+        run: pnpm run build
 
-      # 6. Deploy to GitHub Pages
+      # 6. Deploy ke GitHub Pages
       - name: Deploy to GitHub Pages
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           branch: gh-pages       # branch tujuan
-          folder: build          # folder hasil build
+          folder: build          # folder hasil build (ubah kalau berbeda)
           token: ${{ secrets.GH_PAT }}
