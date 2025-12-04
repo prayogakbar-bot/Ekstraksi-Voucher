@@ -248,7 +248,7 @@ function HistoryPage({ userId, showStatus, handleNavigate }) {
                 <p className="text-xs text-gray-500 mb-2">
                     Status: {userId ? <span className="text-green-600 font-medium">Connected</span> : <span className="text-yellow-600 font-medium">Connecting...</span>}
                 </p>
-                {/* Simulasi Logout (Ganti dengan handleLogout jika HistoryPage menerima prop tersebut) */}
+                {/* Logout Action */}
                 <button 
                     onClick={() => { localStorage.removeItem('isLoggedIn'); window.location.reload(); }} 
                     className="w-full py-2 bg-red-500 text-white text-sm font-semibold rounded-lg hover:bg-red-600 transition duration-200 shadow-md"
@@ -1197,17 +1197,18 @@ function AppContainer({ showStatus, userId, handleLogout, currentPage, handleNav
 }
 
 // =======================================================================
-// === KOMPONEN LOGIN SCREEN (TIDAK BERUBAH) ===
+// === KOMPONEN LOGIN SCREEN (DIPERBARUI) ===
 // =======================================================================
 function LoginScreen({ handleLogin, statusMessage }) {
-    const [username, setUsername] = useState('admin');
-    const [password, setPassword] = useState('1234'); // Default password di set ke 1234
+    // UPDATED: Default kosong ('')
+    const [username, setUsername] = useState('');
+    const [password, setPassword] = useState(''); 
     const [loading, setLoading] = useState(false);
 
     const handleSubmit = (e) => {
         e.preventDefault();
         setLoading(true);
-        // Delay simulasi
+        // Proses Login
         setTimeout(() => {
             handleLogin(username, password);
             setLoading(false);
@@ -1341,7 +1342,7 @@ function App() {
         showStatus('Anda telah berhasil Logout.', 'info');
     };
 
-    // Simulasi Otentikasi dan Pemuatan Data
+    // Cek Status Otentikasi
     useEffect(() => {
         
         const storedLogin = localStorage.getItem('isLoggedIn');
@@ -1353,7 +1354,7 @@ function App() {
     }, []); 
 
     const handleLogin = (username, password) => {
-        // --- SIMULASI LOGIKA LOGIN ---
+        // --- LOGIKA LOGIN ---
         if (username === 'admin' && password === '1234') { 
             setIsLoggedIn(true);
             setUserId('admin-user-123'); 

@@ -2,7 +2,7 @@
   "name": "vd",
   "version": "0.1.0",
   "private": true,
-  "homepage": "https://vdcoucher.site",
+  "homepage": "https://timvd.online",
   "dependencies": {
     "@google/genai": "^1.30.0",
     "@testing-library/dom": "^10.4.0",
