@@ -9,7 +9,7 @@
     "ajv": "6.12.6",
     "ajv-keywords": "3.5.2",
     "firebase": "9.23.0",
-    "@google/genai": "^1.0.0"  // <--- tambahkan ini
+    "@google/genai": "^1.0.0"
   },
   "devDependencies": {
     "react-scripts": "5.0.1"
