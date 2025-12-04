@@ -19,16 +19,10 @@ jobs:
           node-version: 18
           cache: "npm"
 
-      # FIX EINTEGRITY: bersihkan cache npm
       - name: Clean npm cache
         run: npm cache clean --force
 
-      # FIX EINTEGRITY: pakai full online registry
-      - name: Set npm registry
-        run: npm config set registry https://registry.npmjs.org/
-
-      # FIX EINTEGRITY: force online install
-      - name: Install dependencies
+      - name: Force install React Scripts from tarball
         run: npm install --legacy-peer-deps --prefer-online --no-audit --no-fund
 
       - name: Build app
