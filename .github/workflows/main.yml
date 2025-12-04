@@ -1,6 +1,5 @@
 name: Deploy React to GitHub Pages
 
-# Trigger workflow on push to main OR manual run
 on:
   push:
     branches:
@@ -12,27 +11,29 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checkout repo
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      # 2. Set up Node.js
       - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
           node-version: 18
 
-      # 3. Install dependencies (gunakan npm install supaya sinkron)
-      - name: Install dependencies
-        run: npm install
+      # Bersihkan cache npm untuk menghindari corrupted packages
+      - name: Clean npm cache
+        run: npm cache clean --force
 
-      # 4. Build React app
+      # Install dependencies fresh tanpa cache
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+
+      # Build React app
       - name: Build React app
         run: npm run build
 
-      # 5. Deploy to GitHub Pages
+      # Deploy ke GitHub Pages
       - name: Deploy to GitHub Pages
         uses: actions/deploy-pages@v4
         with:
-          branch: gh-pages     # branch tujuan deployment
-          folder: build        # folder hasil build
+          branch: gh-pages
+          folder: build
