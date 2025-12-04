@@ -2,6 +2,6 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
 export default defineConfig({
+  base: '/Ekstraksi-Voucher/', // <--- WAJIB
   plugins: [react()],
-  base: '/', // wajib untuk custom domain
 })
