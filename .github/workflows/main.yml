@@ -1,30 +1,41 @@
-name: Deploy to GitHub Pages
+name: Build and Deploy React App
 
 on:
   push:
     branches:
-      - main  # atau master
+      - main
 
 jobs:
-  deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
 
-      - name: Setup Node
+    steps:
+      # 1️⃣ Checkout repo
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      # 2️⃣ Setup Node.js
+      - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: '20'
+          node-version: 18
 
-      - name: Install Dependencies
-        run: npm install
-
-      - name: Build
-        run: npm run build
-
-      - name: Deploy
-        uses: JamesIves/github-pages-deploy-action@v4
+      # 3️⃣ Setup pnpm
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
         with:
-          branch: gh-pages        # branch tujuan deploy
-          folder: build           # folder build project
-          token: ${{ secrets.GH_PAT }}
+          version: 8 # sesuaikan versi pnpm yang kamu pakai
+
+      # 4️⃣ Install dependencies dengan pnpm
+      - name: Install dependencies
+        run: |
+          pnpm store prune       # bersihkan cache lama
+          pnpm install --frozen-lockfile
+
+      # 5️⃣ Build React app
+      - name: Build
+        run: pnpm run build
+
+      # 6️⃣ Deploy ke GitHub Pages
+      - name: Deploy to GitHub Pages
+        uses: JamesIv
