@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
-  base: '/', // IMPORTANT untuk custom domain
+  base: '', // kosong karena pakai custom domain
   build: {
     outDir: 'dist'
   }
