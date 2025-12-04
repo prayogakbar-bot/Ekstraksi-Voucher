@@ -1,7 +1,8 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
+// Sesuaikan base dengan nama repository GitHub Pages
 export default defineConfig({
-  plugins: [react()],
-  base: '/Ekstraksi-Voucher/', // ganti sesuai nama repo-mu
+  base: '/Ekstraksi-Voucher/',
+  plugins: [react()]
 })
