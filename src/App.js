@@ -190,7 +190,7 @@ function HistoryPage({ userId, showStatus, handleNavigate }) {
     const [error, setError] = useState(null);
     const [isRenaming, setIsRenaming] = useState(null); // ID item yang sedang di-rename
     const [newFilename, setNewFilename] = useState('');
-    const [showShareModal, setShowShareModal] = useState(null); // ID item yang akan di-share
+    // const [showShareModal, setShowShareModal] = useState(null); // DIHILANGKAN: Fitur Share
     
     const fetchHistory = useCallback(async () => {
         if (!userId) {
@@ -243,7 +243,7 @@ function HistoryPage({ userId, showStatus, handleNavigate }) {
         });
     };
     
-    // --- FITUR BARU: RENAME FILENAME ---
+    // --- FITUR EDIT NAMA FILE CSV ---
     const handleRename = async (itemId) => {
         if (isRenaming === itemId) {
             // Save logic
@@ -279,7 +279,7 @@ function HistoryPage({ userId, showStatus, handleNavigate }) {
         }
     };
     
-    // --- FITUR BARU: HAPUS RIWAYAT ---
+    // --- FITUR HAPUS RIWAYAT ---
     const handleDelete = async (itemId, filename) => {
         if (!window.confirm(`Anda yakin ingin menghapus riwayat ekstraksi "${filename}"? Aksi ini tidak dapat dibatalkan.`)) {
             return;
@@ -319,105 +319,12 @@ function HistoryPage({ userId, showStatus, handleNavigate }) {
         showStatus('File CSV riwayat berhasil diunduh.', 'success');
     };
     
-    // --- FITUR BARU: MODAL SHARE LINTAS PLATFORM ---
-    const ShareModal = ({ item, onClose }) => {
-        if (!item) return null;
-
-        const codesText = item.codes.join('\n');
-        const shareTitle = `Hasil Ekstraksi Voucher (${item.count} Kode)`;
-        const shareBody = `Kode Voucher Ekstraksi (${item.filename}.csv) - ${item.count} Kode Unik:\n\n${codesText}`;
-        
-        const handleNativeShare = async () => {
-             if (navigator.share) {
-                try {
-                    await navigator.share({
-                        title: shareTitle,
-                        text: shareBody,
-                    });
-                    showStatus('Berhasil berbagi via Web Share API.', 'success');
-                } catch (error) {
-                    if (error.name !== 'AbortError') {
-                        console.error('Error sharing:', error);
-                        showStatus('Gagal berbagi: ' + error.message, 'error');
-                    }
-                }
-            } else {
-                showStatus('Web Share API tidak didukung di perangkat Anda. Gunakan opsi Salin/WhatsApp/Telegram.', 'error');
-            }
-            onClose();
-        };
-        
-        const handleCopyShare = () => {
-            navigator.clipboard.writeText(shareBody)
-                .then(() => showStatus('Kode berhasil disalin ke clipboard.', 'success'))
-                .catch(err => showStatus('Gagal menyalin kode. Coba lagi.', 'error'));
-            onClose();
-        };
-
-        const whatsappLink = `https://wa.me/?text=${encodeURIComponent(shareBody)}`;
-        const telegramLink = `https://t.me/share/url?url=${encodeURIComponent('Hasil Ekstraksi')}&text=${encodeURIComponent(shareBody)}`;
-
-        return (
-            <div className="fixed inset-0 bg-gray-600 bg-opacity-75 z-[60] flex items-center justify-center p-4" onClick={onClose}>
-                <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
-                    <h3 className="text-xl font-bold text-gray-800 mb-4 border-b pb-2">Bagikan Hasil Ekstraksi</h3>
-                    <p className="text-sm text-gray-600 mb-4">Pilih cara berbagi {item.count} kode unik dari **{item.filename}**:</p>
-                    
-                    <div className="space-y-3">
-                         {navigator.share && (
-                             <button
-                                onClick={handleNativeShare}
-                                className="w-full py-3 bg-navy-accent text-white font-semibold rounded-lg flex items-center justify-center hover:bg-slate-700 transition"
-                            >
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8.684 13.342C8.882 13.064 9 12.719 9 12c0-.72-.118-1.064-.316-1.342m11.368 2.684C20.882 13.064 21 12.719 21 12c0-.72-.118-1.064-.316-1.342M12 21c4.418 0 8-3.582 8-8s-3.582-8-8-8-8 3.582-8 8 3.582 8 8 8zm4.316-12.342C16.118 8.064 16 7.719 16 7c0-.72.118-1.064.316-1.342m-8.632 0C7.882 5.064 9 4.719 9 4c0-.72.118-1.064.316-1.342m4.632 2.684C14.882 8.064 15 7.719 15 7c0-.72.118-1.064.316-1.342" />
-                                </svg>
-                                Bagikan (Native Share)
-                            </button>
-                         )}
-                         <button
-                            onClick={handleCopyShare}
-                            className="w-full py-3 bg-gray-500 text-white font-semibold rounded-lg flex items-center justify-center hover:bg-gray-600 transition"
-                        >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2m-2 2h2m-2 2h2m-2 2h2m-2 2h2" />
-                            </svg>
-                            Salin Teks ke Clipboard
-                        </button>
-                         <a 
-                            href={whatsappLink} 
-                            target="_blank" 
-                            rel="noopener noreferrer"
-                            className="w-full py-3 bg-green-500 text-white font-semibold rounded-lg flex items-center justify-center hover:bg-green-600 transition"
-                        >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M12.03 2.03a10 10 0 00-8.995 5 10 10 00-1 9 10 10 004 8l1.3-3.9a8 8 0 01-1.3-4.1A8 8 0 0112.03 4.03a8 8 0 014 1.1l3.9-1.3A10 10 0012.03 2.03zm.03 20a10 10 0010-10 10 10 00-2-6l-4 4-2.5-2.5-4 4A8 8 0 014 12c0-4.4 3.6-8 8-8s8 3.6 8 8-3.6 8-8 8a9 9 01-5-1.5l-4 4 1.5-4z"/>
-                            </svg>
-                            WhatsApp
-                        </a>
-                        <a 
-                            href={telegramLink} 
-                            target="_blank" 
-                            rel="noopener noreferrer"
-                            className="w-full py-3 bg-blue-500 text-white font-semibold rounded-lg flex items-center justify-center hover:bg-blue-600 transition"
-                        >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M11.94 10.98l-3.5 10.15 15.5-18.13-12 7.98z"/>
-                            </svg>
-                            Telegram
-                        </a>
-                    </div>
-
-                    <button
-                        onClick={onClose}
-                        className="mt-6 w-full py-2 border border-gray-300 text-gray-700 font-semibold rounded-lg hover:bg-gray-100 transition"
-                    >
-                        Tutup
-                    </button>
-                </div>
-            </div>
-        );
+    // --- MODAL SHARE LINTAS PLATFORM (DIHILANGKAN) ---
+    /*
+    const ShareModal = ({ item, onClose }) => { 
+        // ... (kode modal sharing dihilangkan)
     };
+    */
 
     // Sidebar HistoryPage (Hidden di HP: hidden lg:flex)
     const sidebar = (
@@ -581,17 +488,15 @@ function HistoryPage({ userId, showStatus, handleNavigate }) {
                         
                         {/* Responsif: Pindahkan tombol ke bawah di HP, berikan margin-top */}
                         <div className="w-full flex flex-wrap justify-end gap-3 border-t pt-4">
-                             {/* Share Button */}
+                             {/* Share Button (DIHILANGKAN) 
                              <button 
                                 onClick={() => setShowShareModal(item)}
-                                className="px-4 py-2 bg-blue-500 text-white text-sm font-semibold rounded-lg hover:bg-blue-600 transition shadow-md flex-grow sm:flex-grow-0"
+                                // ... classnames ...
                                 disabled={isLoading}
                             >
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 inline mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8.684 13.342C8.882 13.064 9 12.719 9 12c0-.72-.118-1.064-.316-1.342m11.368 2.684C20.882 13.064 21 12.719 21 12c0-.72-.118-1.064-.316-1.342M12 21c4.418 0 8-3.582 8-8s-3.582-8-8-8-8 3.582-8 8 3.582 8 8 8zm4.316-12.342C16.118 8.064 16 7.719 16 7c0-.72.118-1.064.316-1.342m-8.632 0C7.882 5.064 9 4.719 9 4c0-.72.118-1.064.316-1.342m4.632 2.684C14.882 8.064 15 7.719 15 7c0-.72.118-1.064.316-1.342" />
-                                </svg>
+                                // ... svg ...
                                 Bagikan ({item.count})
-                            </button>
+                            </button> */}
 
                             {/* Download Button */}
                             <button 
@@ -649,7 +554,7 @@ function HistoryPage({ userId, showStatus, handleNavigate }) {
 
             {sidebar}
             
-            {showShareModal && <ShareModal item={showShareModal} onClose={() => setShowShareModal(null)} />}
+            {/* {showShareModal && <ShareModal item={showShareModal} onClose={() => setShowShareModal(null)} />} DIHILANGKAN */}
 
             {/* --- KONTEN UTAMA HISTORY (Added pb-20 for bottom nav space on mobile) --- */}
             <div className="flex-grow p-5 lg:p-10 bg-gray-50 pb-20"> 
@@ -1684,7 +1589,7 @@ function App() {
     const renderStatusPopup = () => (
         <div 
             id="status-message" 
-            // **PERUBAHAN KRITIS: Mengubah posisi dari bottom-right ke top-right**
+            // **Pesan Status di Atas Kanan: top-6 right-6**
             className={`fixed top-6 right-6 z-50 p-4 border rounded-lg text-sm shadow-xl transition-all duration-500 transform ${statusMessage.visible ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-full pointer-events-none'} ${
                 statusMessage.type === 'success' ? 'border-green-400 bg-green-100 text-green-800' :
                 statusMessage.type === 'error' ? 'border-red-400 bg-red-100 text-red-800' :
