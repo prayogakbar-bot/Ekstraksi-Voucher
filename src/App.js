@@ -13,14 +13,22 @@ import {
     collection, 
     query,      
     getDocs,    
-    orderBy     
+    orderBy,    
+    deleteDoc, 
+    updateDoc  
 } from "firebase/firestore";
 // ----------------------------------------------------
 
 // --- KONFIGURASI PENTING ---
 // 🔑 API Key Gemini Anda
-const GEMINI_API_KEY = 'AIzaSyCLWcq4td2TQuOq-mlxcfjHSOo_tM3sE78'; 
-// --------------------------
+// GANTI 'KUNCI_ASLI_ANDA_DI_SINI' dengan kunci API Anda yang unik dan rahasia.
+const GEMINI_API_KEY = 'AIzaSyANrXfoMwwKXLzrs53nR8zbCWuJmQ2a7t8';
+
+// --- INISIALISASI GEMINI API (PERBAIKAN KRITIS #1) ---
+// Objek ini harus diinisialisasi sekali secara global (di luar fungsi yang sering dipanggil).
+const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+const model = 'gemini-2.5-flash';
+// --------------------------------------------------
 
 // --- Konfigurasi Firebase untuk Client SDK (Frontend) ---
 const FIREBASE_CONFIG = {
@@ -81,12 +89,7 @@ const resizeImageAndConvertToBase64 = (file) => {
     });
 };
 
-
-// --- FUNGSI INTEGRASI GEMINI API ---
-const ai = new GoogleGenAI({ 
-    apiKey: GEMINI_API_KEY, 
-});
-
+// PERBAIKAN KRITIS #2: Implementasi fungsi yang hilang
 function fileToGenerativePart(base64Image, mimeType) {
     return {
         inlineData: {
@@ -96,16 +99,21 @@ function fileToGenerativePart(base64Image, mimeType) {
     };
 }
 
+// File: App.js (di dalam fungsi callGeminiApi)
 async function callGeminiApi(base64Image, prompt, fileName) {
-    if (!GEMINI_API_KEY || GEMINI_API_KEY === 'YOUR_GEMINI_API_KEY') {
-        throw new Error("Kunci API Gemini belum diatur atau tidak valid.");
+    
+    // Pengecekan Kunci API
+    if (!GEMINI_API_KEY) { 
+        throw new Error("Kunci API Gemini belum diatur.");
     }
     
-    const model = 'gemini-2.5-flash'; 
+    // PERBAIKAN KRITIS #3: Inisialisasi 'ai' dan 'model' DIBUANG dari sini
+    // karena sudah dideklarasikan secara global di atas.
 
     try {
+        // Menggunakan variabel global 'ai' dan 'model'
         const imagePart = fileToGenerativePart(base64Image, 'image/jpeg'); 
-        const response = await ai.models.generateContent({
+        const response = await ai.models.generateContent({ 
             model: model,
             contents: [
                 imagePart,
@@ -180,7 +188,10 @@ function HistoryPage({ userId, showStatus, handleNavigate }) {
     const [historyList, setHistoryList] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState(null);
-
+    const [isRenaming, setIsRenaming] = useState(null); // ID item yang sedang di-rename
+    const [newFilename, setNewFilename] = useState('');
+    const [showShareModal, setShowShareModal] = useState(null); // ID item yang akan di-share
+    
     const fetchHistory = useCallback(async () => {
         if (!userId) {
              showStatus("Gagal memuat: Pengguna tidak terautentikasi.", 'error');
@@ -191,12 +202,16 @@ function HistoryPage({ userId, showStatus, handleNavigate }) {
         setIsLoading(true);
         setError(null);
         try {
+            // Sort by timestamp for order consistency
             const q = query(collection(db, DB_COLLECTION_NAME), orderBy("timestamp", "desc"));
             const querySnapshot = await getDocs(q);
             
             const fetchedData = [];
             querySnapshot.forEach((doc) => {
-                fetchedData.push({ id: doc.id, ...doc.data() });
+                // Ensure filename is set, default to a sensible name if missing
+                const data = doc.data();
+                const filename = data.filename || `extracted_vouchers_${formatDate(data.timestamp).replace(/, /g, '_').replace(/:/g, '-')}`;
+                fetchedData.push({ id: doc.id, ...data, filename: filename });
             });
 
             setHistoryList(fetchedData);
@@ -228,8 +243,64 @@ function HistoryPage({ userId, showStatus, handleNavigate }) {
         });
     };
     
+    // --- FITUR BARU: RENAME FILENAME ---
+    const handleRename = async (itemId) => {
+        if (isRenaming === itemId) {
+            // Save logic
+            if (!newFilename.trim()) {
+                 showStatus("Nama file tidak boleh kosong.", 'error');
+                 return;
+            }
+            setIsLoading(true);
+            try {
+                const docRef = doc(db, DB_COLLECTION_NAME, itemId);
+                await updateDoc(docRef, {
+                    filename: newFilename.trim()
+                });
+                // Update state locally
+                setHistoryList(prevList => prevList.map(item => 
+                    item.id === itemId ? { ...item, filename: newFilename.trim() } : item
+                ));
+                showStatus(`Nama file riwayat berhasil diperbarui menjadi ${newFilename.trim()}.`, 'success');
+                setIsRenaming(null);
+                setNewFilename('');
+            } catch (err) {
+                console.error("Error renaming document: ", err);
+                showStatus(`Gagal memperbarui nama file: ${err.message}`, 'error');
+            } finally {
+                setIsLoading(false);
+            }
+        } else {
+            const currentItem = historyList.find(item => item.id === itemId);
+            if (currentItem) {
+                setNewFilename(currentItem.filename.replace(/\.csv$/i, '')); // Remove .csv extension if present
+                setIsRenaming(itemId);
+            }
+        }
+    };
+    
+    // --- FITUR BARU: HAPUS RIWAYAT ---
+    const handleDelete = async (itemId, filename) => {
+        if (!window.confirm(`Anda yakin ingin menghapus riwayat ekstraksi "${filename}"? Aksi ini tidak dapat dibatalkan.`)) {
+            return;
+        }
+
+        setIsLoading(true);
+        try {
+            await deleteDoc(doc(db, DB_COLLECTION_NAME, itemId));
+            // Update state locally
+            setHistoryList(prevList => prevList.filter(item => item.id !== itemId));
+            showStatus(`Riwayat ekstraksi "${filename}" berhasil dihapus.`, 'success');
+        } catch (err) {
+            console.error("Error deleting document: ", err);
+            showStatus(`Gagal menghapus riwayat: ${err.message}`, 'error');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
     // Fungsi untuk membuat tombol Unduh CSV
-    const downloadHistoryCodes = (codes) => {
+    const downloadHistoryCodes = (codes, filename) => {
         if (codes.length === 0) return;
         
         const csvContent = codes.map(code => `"${code}"`).join('\n'); 
@@ -237,9 +308,9 @@ function HistoryPage({ userId, showStatus, handleNavigate }) {
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         
-        const filename = `history_extraction_${formatDate(new Date()).replace(/, /g, '_').replace(/:/g, '-')}`;
+        const finalFilename = filename.trim().replace(/\.csv$/i, '') || 'extracted_vouchers_download';
         link.setAttribute('href', url);
-        link.setAttribute('download', `${filename}.csv`);
+        link.setAttribute('download', `${finalFilename}.csv`);
         link.style.visibility = 'hidden';
         document.body.appendChild(link);
         link.click();
@@ -248,6 +319,106 @@ function HistoryPage({ userId, showStatus, handleNavigate }) {
         showStatus('File CSV riwayat berhasil diunduh.', 'success');
     };
     
+    // --- FITUR BARU: MODAL SHARE LINTAS PLATFORM ---
+    const ShareModal = ({ item, onClose }) => {
+        if (!item) return null;
+
+        const codesText = item.codes.join('\n');
+        const shareTitle = `Hasil Ekstraksi Voucher (${item.count} Kode)`;
+        const shareBody = `Kode Voucher Ekstraksi (${item.filename}.csv) - ${item.count} Kode Unik:\n\n${codesText}`;
+        
+        const handleNativeShare = async () => {
+             if (navigator.share) {
+                try {
+                    await navigator.share({
+                        title: shareTitle,
+                        text: shareBody,
+                    });
+                    showStatus('Berhasil berbagi via Web Share API.', 'success');
+                } catch (error) {
+                    if (error.name !== 'AbortError') {
+                        console.error('Error sharing:', error);
+                        showStatus('Gagal berbagi: ' + error.message, 'error');
+                    }
+                }
+            } else {
+                showStatus('Web Share API tidak didukung di perangkat Anda. Gunakan opsi Salin/WhatsApp/Telegram.', 'error');
+            }
+            onClose();
+        };
+        
+        const handleCopyShare = () => {
+            navigator.clipboard.writeText(shareBody)
+                .then(() => showStatus('Kode berhasil disalin ke clipboard.', 'success'))
+                .catch(err => showStatus('Gagal menyalin kode. Coba lagi.', 'error'));
+            onClose();
+        };
+
+        const whatsappLink = `https://wa.me/?text=${encodeURIComponent(shareBody)}`;
+        const telegramLink = `https://t.me/share/url?url=${encodeURIComponent('Hasil Ekstraksi')}&text=${encodeURIComponent(shareBody)}`;
+
+        return (
+            <div className="fixed inset-0 bg-gray-600 bg-opacity-75 z-[60] flex items-center justify-center p-4" onClick={onClose}>
+                <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
+                    <h3 className="text-xl font-bold text-gray-800 mb-4 border-b pb-2">Bagikan Hasil Ekstraksi</h3>
+                    <p className="text-sm text-gray-600 mb-4">Pilih cara berbagi {item.count} kode unik dari **{item.filename}**:</p>
+                    
+                    <div className="space-y-3">
+                         {navigator.share && (
+                             <button
+                                onClick={handleNativeShare}
+                                className="w-full py-3 bg-navy-accent text-white font-semibold rounded-lg flex items-center justify-center hover:bg-slate-700 transition"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8.684 13.342C8.882 13.064 9 12.719 9 12c0-.72-.118-1.064-.316-1.342m11.368 2.684C20.882 13.064 21 12.719 21 12c0-.72-.118-1.064-.316-1.342M12 21c4.418 0 8-3.582 8-8s-3.582-8-8-8-8 3.582-8 8 3.582 8 8 8zm4.316-12.342C16.118 8.064 16 7.719 16 7c0-.72.118-1.064.316-1.342m-8.632 0C7.882 5.064 9 4.719 9 4c0-.72.118-1.064.316-1.342m4.632 2.684C14.882 8.064 15 7.719 15 7c0-.72.118-1.064.316-1.342" />
+                                </svg>
+                                Bagikan (Native Share)
+                            </button>
+                         )}
+                         <button
+                            onClick={handleCopyShare}
+                            className="w-full py-3 bg-gray-500 text-white font-semibold rounded-lg flex items-center justify-center hover:bg-gray-600 transition"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2m-2 2h2m-2 2h2m-2 2h2m-2 2h2" />
+                            </svg>
+                            Salin Teks ke Clipboard
+                        </button>
+                         <a 
+                            href={whatsappLink} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="w-full py-3 bg-green-500 text-white font-semibold rounded-lg flex items-center justify-center hover:bg-green-600 transition"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M12.03 2.03a10 10 0 00-8.995 5 10 10 00-1 9 10 10 004 8l1.3-3.9a8 8 0 01-1.3-4.1A8 8 0 0112.03 4.03a8 8 0 014 1.1l3.9-1.3A10 10 0012.03 2.03zm.03 20a10 10 0010-10 10 10 00-2-6l-4 4-2.5-2.5-4 4A8 8 0 014 12c0-4.4 3.6-8 8-8s8 3.6 8 8-3.6 8-8 8a9 9 01-5-1.5l-4 4 1.5-4z"/>
+                            </svg>
+                            WhatsApp
+                        </a>
+                        <a 
+                            href={telegramLink} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="w-full py-3 bg-blue-500 text-white font-semibold rounded-lg flex items-center justify-center hover:bg-blue-600 transition"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M11.94 10.98l-3.5 10.15 15.5-18.13-12 7.98z"/>
+                            </svg>
+                            Telegram
+                        </a>
+                    </div>
+
+                    <button
+                        onClick={onClose}
+                        className="mt-6 w-full py-2 border border-gray-300 text-gray-700 font-semibold rounded-lg hover:bg-gray-100 transition"
+                    >
+                        Tutup
+                    </button>
+                </div>
+            </div>
+        );
+    };
+
     // Sidebar HistoryPage (Hidden di HP: hidden lg:flex)
     const sidebar = (
         <div className="hidden lg:flex w-64 bg-white p-6 flex-col h-screen sticky top-0 shadow-lg border-r border-gray-200">
@@ -307,7 +478,7 @@ function HistoryPage({ userId, showStatus, handleNavigate }) {
 
 
     const HistoryContent = () => {
-        if (isLoading) {
+        if (isLoading && historyList.length === 0) {
             return (
                 <div className="text-center py-20">
                     <svg className="animate-spin mx-auto h-10 w-10 text-navy-accent" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -342,32 +513,108 @@ function HistoryPage({ userId, showStatus, handleNavigate }) {
             <div className="space-y-4">
                 {historyList.map((item, index) => (
                     // Responsif: Ganti flex-row dengan flex-col di layar kecil (sm:flex-row)
-                    <div key={item.id} className="main-card p-5 flex flex-col sm:flex-row justify-between items-start sm:items-center hover:shadow-lg transition duration-300">
-                        <div className="flex-grow">
-                            <div className="flex items-baseline mb-1">
-                                <span className="text-3xl font-extrabold text-navy-accent mr-3">{item.count}</span>
-                                <span className="text-lg font-semibold text-gray-700">Kode Unik Diekstrak</span>
+                    <div key={item.id} className="main-card p-5 flex flex-col justify-between items-start hover:shadow-lg transition duration-300">
+                        <div className="w-full">
+                            {/* --- Baris 1: Count & Filename --- */}
+                            <div className="flex items-center justify-between mb-3 border-b pb-3">
+                                <div className="flex items-baseline">
+                                    <span className="text-3xl font-extrabold text-navy-accent mr-3">{item.count}</span>
+                                    <span className="text-lg font-semibold text-gray-700">Kode Unik Diekstrak</span>
+                                </div>
+                                <p className="text-sm font-medium text-gray-800">
+                                    {formatDate(item.timestamp)}
+                                </p>
                             </div>
-                            <p className="text-sm text-gray-500 mt-1">
+
+                            {/* --- Baris 2: Filename Edit --- */}
+                            <div className="flex items-center mb-3">
+                                {isRenaming === item.id ? (
+                                    <>
+                                        <input
+                                            type="text"
+                                            value={newFilename}
+                                            onChange={(e) => setNewFilename(e.target.value)}
+                                            className="p-1 border border-gray-400 rounded-lg text-sm w-full font-semibold focus:ring-navy-accent focus:border-navy-accent mr-2"
+                                            placeholder="Masukkan nama file baru"
+                                            disabled={isLoading}
+                                        />
+                                        <button 
+                                            onClick={() => handleRename(item.id)}
+                                            className="px-3 py-1 bg-green-500 text-white text-xs font-semibold rounded-lg hover:bg-green-600 transition disabled:opacity-50"
+                                            disabled={isLoading}
+                                        >
+                                            Simpan
+                                        </button>
+                                         <button 
+                                            onClick={() => { setIsRenaming(null); setNewFilename(''); }}
+                                            className="ml-2 px-3 py-1 bg-gray-500 text-white text-xs font-semibold rounded-lg hover:bg-gray-600 transition disabled:opacity-50"
+                                            disabled={isLoading}
+                                        >
+                                            Batal
+                                        </button>
+                                    </>
+                                ) : (
+                                    <>
+                                        <p className="text-sm text-gray-700 font-semibold truncate mr-3">
+                                            Nama File: <span className="text-navy-accent">{item.filename}.csv</span>
+                                        </p>
+                                        <button 
+                                            onClick={() => handleRename(item.id)}
+                                            className="px-2 py-0.5 bg-gray-200 text-gray-700 text-xs font-semibold rounded-md hover:bg-gray-300 transition"
+                                            disabled={isLoading}
+                                            title="Edit Nama File"
+                                        >
+                                             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 inline" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                            </svg>
+                                        </button>
+                                    </>
+                                )}
+                            </div>
+
+                            {/* --- Baris 3: Source Files --- */}
+                             <p className="text-sm text-gray-500 mb-4">
                                 <span className='font-semibold'>Sumber:</span> Dari {item.sourceFiles.length} file (misalnya: {item.sourceFiles.slice(0, 3).join(', ')}
                                 {item.sourceFiles.length > 3 && ` dan ${item.sourceFiles.length - 3} file lainnya.`})
                             </p>
                         </div>
                         
                         {/* Responsif: Pindahkan tombol ke bawah di HP, berikan margin-top */}
-                        <div className="text-left sm:text-right flex flex-col items-start sm:items-end mt-4 sm:mt-0">
-                            <p className="text-sm font-medium text-gray-800">
-                                {formatDate(item.timestamp)}
-                            </p>
+                        <div className="w-full flex flex-wrap justify-end gap-3 border-t pt-4">
+                             {/* Share Button */}
+                             <button 
+                                onClick={() => setShowShareModal(item)}
+                                className="px-4 py-2 bg-blue-500 text-white text-sm font-semibold rounded-lg hover:bg-blue-600 transition shadow-md flex-grow sm:flex-grow-0"
+                                disabled={isLoading}
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 inline mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8.684 13.342C8.882 13.064 9 12.719 9 12c0-.72-.118-1.064-.316-1.342m11.368 2.684C20.882 13.064 21 12.719 21 12c0-.72-.118-1.064-.316-1.342M12 21c4.418 0 8-3.582 8-8s-3.582-8-8-8-8 3.582-8 8 3.582 8 8 8zm4.316-12.342C16.118 8.064 16 7.719 16 7c0-.72.118-1.064.316-1.342m-8.632 0C7.882 5.064 9 4.719 9 4c0-.72.118-1.064.316-1.342m4.632 2.684C14.882 8.064 15 7.719 15 7c0-.72.118-1.064.316-1.342" />
+                                </svg>
+                                Bagikan ({item.count})
+                            </button>
+
                             {/* Download Button */}
                             <button 
-                                onClick={() => downloadHistoryCodes(item.codes)}
-                                className="mt-3 px-4 py-2 bg-gold-accent text-navy-accent text-sm font-semibold rounded-lg hover:bg-yellow-500 transition shadow-md"
+                                onClick={() => downloadHistoryCodes(item.codes, item.filename)}
+                                className="px-4 py-2 bg-gold-accent text-navy-accent text-sm font-semibold rounded-lg hover:bg-yellow-500 transition shadow-md flex-grow sm:flex-grow-0"
+                                disabled={isLoading}
                             >
                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 inline mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                                 </svg>
                                 Unduh CSV ({item.count})
+                            </button>
+                            
+                            {/* Delete Button */}
+                            <button 
+                                onClick={() => handleDelete(item.id, item.filename)}
+                                className="px-4 py-2 bg-red-500 text-white text-sm font-semibold rounded-lg hover:bg-red-600 transition shadow-md flex-grow sm:flex-grow-0"
+                                disabled={isLoading}
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 inline mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                                Hapus
                             </button>
                         </div>
                     </div>
@@ -401,6 +648,8 @@ function HistoryPage({ userId, showStatus, handleNavigate }) {
             `}</style>
 
             {sidebar}
+            
+            {showShareModal && <ShareModal item={showShareModal} onClose={() => setShowShareModal(null)} />}
 
             {/* --- KONTEN UTAMA HISTORY (Added pb-20 for bottom nav space on mobile) --- */}
             <div className="flex-grow p-5 lg:p-10 bg-gray-50 pb-20"> 
@@ -484,7 +733,7 @@ function AppContainer({ showStatus, userId, handleLogout, currentPage, handleNav
     const codeCount = uniqueCodesList.uniqueList.length;
 
     // --- FUNGSI BARU UNTUK MENYIMPAN KE FIREBASE FIRESTORE ---
-    const saveCodesToDatabase = useCallback(async (codesList, files) => {
+    const saveCodesToDatabase = useCallback(async (codesList, files, filename) => {
         if (codesList.uniqueList.length === 0) {
             showStatus("Tidak ada kode unik untuk disimpan.", 'info');
             return;
@@ -501,6 +750,7 @@ function AppContainer({ showStatus, userId, handleLogout, currentPage, handleNav
             count: codesList.uniqueList.length,
             // Menyimpan daftar nama file yang diproses
             sourceFiles: files.map(f => f.name), 
+            filename: filename.trim() || `extracted_vouchers_${new Date().toISOString().slice(0, 10)}`, // Save the filename
             timestamp: serverTimestamp(), 
         };
 
@@ -526,6 +776,7 @@ function AppContainer({ showStatus, userId, handleLogout, currentPage, handleNav
         if (mode === 'full') {
             setUploadedFiles([]);
             setUploadedFileBase64([]);
+            setFilenameInput(''); // Reset filename input
         }
         
         setIsEditMode(false);
@@ -589,6 +840,7 @@ function AppContainer({ showStatus, userId, handleLogout, currentPage, handleNav
                 setProcessProgress(progress);
                 showStatus(`[${i + 1}/${uploadedFileBase64.length}] Memproses file: ${fileName}...`, 'info');
 
+                // Menggunakan fungsi callGeminiApi yang sudah diperbaiki
                 const rawResultText = await callGeminiApi(
                     fileData.base64, 
                     currentPrompt,
@@ -634,7 +886,8 @@ function AppContainer({ showStatus, userId, handleLogout, currentPage, handleNav
             // --- PANGGIL FUNGSI SIMPAN KE DATABASE DI SINI ---
             await saveCodesToDatabase(
                 { uniqueList: uniqueCodesExtracted.list, uniqueSet: uniqueCodesExtracted.set }, 
-                uploadedFiles
+                uploadedFiles,
+                filenameInput
             );
             // ----------------------------------------------------
             success = true;
@@ -669,19 +922,15 @@ function AppContainer({ showStatus, userId, handleLogout, currentPage, handleNav
     const copyCodes = () => {
         const codesToCopy = uniqueCodesText.trim();
         if (codesToCopy) {
-            const textarea = document.createElement('textarea');
-            textarea.value = codesToCopy;
-            document.body.appendChild(textarea);
-            textarea.select();
-            
-            try {
-                document.execCommand('copy');
-                showStatus('Daftar kode unik berhasil disalin!', 'success');
-            } catch (err) {
-                console.error('Failed to copy text:', err);
-                showStatus('Gagal menyalin. Harap salin manual dari kotak teks.', 'error');
-            }
-            document.body.removeChild(textarea);
+            // Menggunakan Clipboard API modern
+            navigator.clipboard.writeText(codesToCopy)
+                .then(() => {
+                    showStatus('Daftar kode unik berhasil disalin!', 'success');
+                })
+                .catch(err => {
+                    console.error('Failed to copy text:', err);
+                    showStatus('Gagal menyalin. Harap salin manual dari kotak teks.', 'error');
+                });
         }
     };
 
@@ -1388,7 +1637,8 @@ function App() {
 
     const showStatus = useCallback((text, type = 'info') => {
         setStatusMessage({ text, type, visible: true });
-        setTimeout(() => setStatusMessage(prev => ({ ...prev, visible: false })), 7000); 
+        // Mengubah timeout menjadi 5 detik untuk notifikasi yang tidak terlalu lama
+        setTimeout(() => setStatusMessage(prev => ({ ...prev, visible: false })), 5000); 
     }, []);
     
     // NEW NAVIGATION HANDLER
@@ -1430,11 +1680,12 @@ function App() {
         }
     };
     
-    // --- STATUS MESSAGE UNTUK DASHBOARD ---
+    // --- STATUS MESSAGE UNTUK DASHBOARD (Diubah ke top-right) ---
     const renderStatusPopup = () => (
         <div 
             id="status-message" 
-            className={`fixed bottom-6 right-6 z-50 p-4 border rounded-lg text-sm shadow-xl transition-all duration-500 transform ${statusMessage.visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-12 pointer-events-none'} ${
+            // **PERUBAHAN KRITIS: Mengubah posisi dari bottom-right ke top-right**
+            className={`fixed top-6 right-6 z-50 p-4 border rounded-lg text-sm shadow-xl transition-all duration-500 transform ${statusMessage.visible ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-full pointer-events-none'} ${
                 statusMessage.type === 'success' ? 'border-green-400 bg-green-100 text-green-800' :
                 statusMessage.type === 'error' ? 'border-red-400 bg-red-100 text-red-800' :
                 'border-blue-400 bg-blue-100 text-blue-800'
