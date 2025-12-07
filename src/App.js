@@ -823,7 +823,7 @@ function LoginScreen({ handleLogin, statusMessage }) {
                 <div className="text-center mb-8">
                     <svg className="mx-auto w-12 h-12 text-navy-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 7a2 2 0 012 2v2m4-2h-3m4 2v7a2 2 0 01-2 2H5a2 2 0 01-2-2V9a2 2 0 012-2h2m2 4h10m0 0l-3 3m3-3l-3-3" /></svg>
                     <h1 className="text-2xl font-extrabold text-gray-800 mt-3">Panel Admin Login</h1> 
-                    <p className="text-gray-500">Otomasi Ekstraksi Voucher</p>
+                    <p className="text-gray-500">Ekstraksi Voucher</p>
                 </div>
                 <div className="space-y-4">
                     {/* Input Username */}
