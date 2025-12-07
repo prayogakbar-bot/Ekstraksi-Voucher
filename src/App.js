@@ -399,6 +399,7 @@ function AppContainer({ showStatus, userId, handleLogout, currentPage, handleNav
         const newFiles = [...uploadedFiles, ...files];
         setUploadedFiles(newFiles);
         try {
+            // resizeImageAndConvertToBase64 HARUS mengembalikan objek yang mengandung { base64, dataURL, name }
             const base64Promises = files.map(file => resizeImageAndConvertToBase64(file));
             const newBase64Data = await Promise.all(base64Promises);
             setUploadedFileBase64(prev => [...prev, ...newBase64Data]);
@@ -434,7 +435,12 @@ function AppContainer({ showStatus, userId, handleLogout, currentPage, handleNav
                 const fileName = uploadedFiles[i].name;
                 const progress = ((i + 1) / uploadedFileBase64.length) * 100;
                 setProcessProgress(progress);
+                
+                // MODIFIKASI: Menambahkan indikator [i+1/Total] pada showStatus
                 showStatus(`[${i + 1}/${uploadedFileBase64.length}] Memproses file: ${fileName}...`, 'info');
+
+                // MODIFIKASI: Ambil dataURL dari hasil konversi
+                const fileDataURL = uploadedFileBase64[i].dataURL; 
 
                 const rawResultText = await callGeminiApi(fileData.base64, currentPrompt, fileName);
                 
@@ -445,7 +451,10 @@ function AppContainer({ showStatus, userId, handleLogout, currentPage, handleNav
                     file: uploadedFiles[i],
                     extractedCodes: extractedCodes,
                     allSequences: allSequences,
+                    // TAMBAHAN: Menyimpan dataURL untuk pratinjau gambar di detail mentah
+                    dataURL: fileDataURL, 
                 });
+                
                 extractedCodes.forEach(code => {
                     newDetectedCodes.push({
                         code: code,
@@ -587,15 +596,23 @@ function AppContainer({ showStatus, userId, handleLogout, currentPage, handleNav
         return { display: '', text: potentialMatches.join('\n') };
     };
 
+    // MODIFIKASI FUNGSI INI UNTUK MENGEMBALIKAN DATA ARRAY BUKAN STRING
     const renderProcessedDetails = () => {
-        if (allProcessedDetails.length === 0 || !showAllDetails) return { display: 'hidden', text: '' };
-        const detailsText = allProcessedDetails.map(detail => {
+        if (allProcessedDetails.length === 0 || !showAllDetails) return { display: 'hidden', data: [] };
+        
+        const detailsData = allProcessedDetails.map(detail => {
             const fileName = detail.file.name;
             const extractedCodes = detail.extractedCodes.join(', ') || 'TIDAK ADA KODE 18 DIGIT YANG VALID';
             const allSequences = detail.allSequences.join(' | ');
-            return `[${fileName}]\n  Valid (18 digit): ${extractedCodes}\n  Semua Hasil Mentah: ${allSequences}`;
-        }).join('\n\n');
-        return { display: '', text: detailsText };
+            
+            return {
+                fileName: fileName,
+                validCodes: extractedCodes,
+                rawSequences: allSequences,
+                dataURL: detail.dataURL, // Data URL base64 untuk pratinjau gambar
+            };
+        });
+        return { display: '', data: detailsData };
     };
     
     const sidebar = (
@@ -744,7 +761,7 @@ function AppContainer({ showStatus, userId, handleLogout, currentPage, handleNav
                                 </button>
                                 <div className='flex flex-col sm:flex-row gap-3 w-full sm:w-auto'>
                                     <button id="copy-button" className="px-4 py-2.5 bg-navy-accent text-white text-sm font-semibold rounded-lg shadow-md hover:bg-gray-700 transition duration-200 disabled:opacity-50 disabled:bg-gray-300 disabled:text-gray-500 w-full sm:w-auto" disabled={codeCount === 0 || isLoading || isEditMode} onClick={copyCodes}>
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 inline mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h2a2 2 0 012 2v2m0 0h2m-2 2h2m-2 2h2m-2 2h2m-2 2h2m-2 2h2" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a2 2 0 012 2v10a2 2 0 01-2 2H6a2 2 0 01-2-2V9a2 2 0 012-2h2" /></svg> Salin
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 inline mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h2a2 2 0 012 2v2m0 0h2m-2 2h2m-2 2h2m-2 2h2m-2 2h2m-2 2h2m-2 2h2" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a2 2 0 012 2v10a2 2 0 01-2 2H6a2 2 0 01-2-2V9a2 2 0 012-2h2" /></svg> Salin
                                     </button>
                                     <button id="download-button" className="px-4 py-2.5 bg-gold-accent text-navy-accent text-sm font-semibold rounded-lg shadow-md hover:bg-yellow-500 transition duration-200 disabled:opacity-50 disabled:bg-gray-300 disabled:text-gray-500 w-full sm:w-auto" disabled={codeCount === 0 || isLoading || isEditMode} onClick={downloadCodes}>
                                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 inline mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg> Unduh CSV
@@ -776,7 +793,39 @@ function AppContainer({ showStatus, userId, handleLogout, currentPage, handleNav
                                 <svg xmlns="http://www.w3.org/2000/svg" className={`h-5 w-5 ml-auto text-gray-500 transition-transform ${showAllDetails ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
                             </h2>
                             {showAllDetails && (
-                                <textarea id="raw-details-display" rows="12" className="w-full p-3 border rounded-lg font-mono text-xs bg-gray-100 text-gray-700 resize-none" value={renderProcessedDetails().text || "Detail hasil mentah dari setiap file yang diproses akan muncul di sini."} readOnly />
+                                <div className="space-y-6">
+                                    {/* MODIFIKASI: Mengganti textarea dengan loop card */}
+                                    {renderProcessedDetails().data.length > 0 ? (
+                                        renderProcessedDetails().data.map((detail, index) => (
+                                            <div key={index} className="border border-gray-200 p-4 rounded-lg bg-white shadow-sm">
+                                                <h4 className="text-base font-bold text-navy-accent mb-2">File: {detail.fileName}</h4>
+                                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                                    {/* Kolom Gambar Pratinjau */}
+                                                    <div className="sm:col-span-1 flex justify-center items-start">
+                                                        <img 
+                                                            src={detail.dataURL} 
+                                                            alt={`Pratinjau ${detail.fileName}`} 
+                                                            className="w-full h-auto max-h-48 object-contain rounded-lg border border-gray-300 shadow-md cursor-pointer"
+                                                            // Tambahkan onClick untuk melihat gambar secara penuh di tab baru
+                                                            onClick={() => window.open(detail.dataURL, '_blank')}
+                                                        />
+                                                    </div>
+                                                    {/* Kolom Detail Teks */}
+                                                    <div className="sm:col-span-2 space-y-2">
+                                                        <p className="text-sm font-semibold text-gray-700">Kode Valid (18 digit): <span className="font-mono text-base text-green-600 font-bold">{detail.validCodes}</span></p>
+                                                        <div>
+                                                            <p className="text-sm font-semibold text-gray-700 mt-3">Semua Urutan Mentah (Dipisahkan oleh |):</p>
+                                                            {/* Menggunakan <pre> dengan whitespace-pre-wrap agar mudah dibaca */}
+                                                            <pre className="p-2 border rounded-lg bg-gray-50 font-mono text-xs text-gray-600 max-h-32 overflow-y-auto whitespace-pre-wrap break-all">{detail.rawSequences}</pre>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))
+                                    ) : (
+                                        <p className="p-3 border rounded-lg font-mono text-xs bg-gray-100 text-gray-700 resize-none">Detail hasil mentah dari setiap file yang diproses akan muncul di sini setelah proses ekstraksi selesai.</p>
+                                    )}
+                                </div>
                             )}
                         </div>
                     </div>
