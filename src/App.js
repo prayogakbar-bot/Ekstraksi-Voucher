@@ -835,7 +835,7 @@ function LoginScreen({ handleLogin, statusMessage }) {
                             value={username}
                             onChange={(e) => setUsername(e.target.value)}
                             className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-navy-accent focus:border-navy-accent"
-                            placeholder=""
+                            placeholder="Masukkan Username"
                             disabled={isAuthenticating}
                         />
                     </div>
@@ -848,7 +848,7 @@ function LoginScreen({ handleLogin, statusMessage }) {
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
                             className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-navy-accent focus:border-navy-accent"
-                            placeholder=""
+                            placeholder="Masukkan Password"
                             disabled={isAuthenticating}
                         />
                     </div>
