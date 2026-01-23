@@ -1,992 +1,392 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
+import * as XLSX from 'xlsx';
+// Import Firebase
+import { initializeApp } from "firebase/app";
+import { getFirestore, doc, setDoc, onSnapshot } from "firebase/firestore";
 
-// --- IMPOR DARI FILE EKSTERNAL ---
-import { 
-    resizeImageAndConvertToBase64, 
-    callGeminiApi, 
-    TARGET_DIGITS_REQUIRED 
-} from './gemini'; 
-import { 
-    saveCodesToDatabase, 
-    fetchHistory, 
-    updateFilename, 
-    deleteHistoryItem,
-    formatDate, 
-} from './firebase'; 
-// ------------------------------------
+// --- CONFIGURATION FIREBASE (Using ENV) ---
+const firebaseConfig = {
+  apiKey: process.env.REACT_APP_FIREBASE_KEY,
+  authDomain: process.env.REACT_APP_FIREBASE_DOMAIN,
+  projectId: process.env.REACT_APP_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.REACT_APP_FIREBASE_STORAGE,
+  messagingSenderId: process.env.REACT_APP_FIREBASE_SENDER,
+  appId: process.env.REACT_APP_FIREBASE_APP_ID
+};
 
-// =======================================================================
-// === KOMPONEN NAVIGASI BAWAH UNTUK PONSEL (BottomNavBar) ===
-// =======================================================================
-function BottomNavBar({ currentPage, handleNavigate }) {
-    return (
-        <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50 shadow-2xl">
-            <div className="flex justify-around items-center h-16">
-                <button
-                    onClick={() => handleNavigate('extraction')}
-                    className={`flex flex-col items-center p-2 text-xs font-semibold transition duration-200 ${currentPage === 'extraction' ? 'text-navy-accent' : 'text-gray-500 hover:text-navy-accent'}`}
-                >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 20 20" fill="currentColor">
-                        <path d="M7 3a1 1 0 000 2h6a1 1 0 100-2H7zM4 9a1 1 0 100 2h12a1 1 0 100-2H4zM7 15a1 1 0 100 2h6a1 1 0 100-2H7z" />
-                    </svg>
-                    <span>Ekstraksi</span>
-                </button>
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
 
-                <button
-                    onClick={() => handleNavigate('history')}
-                    className={`flex flex-col items-center p-2 text-xs font-semibold transition duration-200 ${currentPage === 'history' ? 'text-navy-accent' : 'text-gray-500 hover:text-navy-accent'}`}
-                >
-                     <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-                    </svg>
-                    <span>Arsip</span>
-                </button>
-                
-                <button
-                    onClick={() => { localStorage.removeItem('isLoggedIn'); window.location.reload(); }} 
-                    className={`flex flex-col items-center p-2 text-xs font-semibold transition duration-200 text-gray-500 hover:text-red-500`}
-                >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                    </svg>
-                    <span>Logout</span>
-                </button>
-            </div>
-        </div>
-    );
-}
+// --- CONSTANTS ---
+const WEBHOOK_ID = process.env.REACT_APP_WEBHOOK_ID || ""; // Mengambil dari ENV sesuai memori [cite: 2025-12-19]
 
-// =======================================================================
-// === KOMPONEN HISTORY PAGE (Dimodifikasi dengan Filter & Sort) ===
-// =======================================================================
-function HistoryPage({ userId, showStatus, handleNavigate }) {
-    const [historyList, setHistoryList] = useState([]);
-    const [isLoading, setIsLoading] = useState(true);
-    const [error, setError] = useState(null);
-    const [isRenaming, setIsRenaming] = useState(null); 
-    const [newFilename, setNewFilename] = useState('');
-    
-    // --- FITUR TAMBAHAN: State untuk Filter dan Sort ---
-    const [searchTerm, setSearchTerm] = useState('');
-    const [sortBy, setSortBy] = useState('timestamp'); // 'timestamp', 'count', 'filename'
-    const [sortOrder, setSortOrder] = useState('desc'); // 'asc' atau 'desc'
-    // ----------------------------------------------------
-    
-    const fetchHistoryData = useCallback(async () => {
-        setIsLoading(true);
-        setError(null);
-        try {
-            const fetchedData = await fetchHistory(userId, showStatus);
-            setHistoryList(fetchedData);
-            showStatus(`Berhasil memuat ${fetchedData.length} riwayat ekstraksi.`, 'success');
-
-        } catch (err) {
-            setError("Gagal memuat riwayat. Periksa koneksi Firestore Anda.");
-        } finally {
-            setIsLoading(false);
-        }
-    }, [userId, showStatus]);
-
+// --- HELPER: ANIMASI ANGKA BERJALAN (COUNT-UP) ---
+const CountUp = ({ value, duration = 1000 }) => {
+    const [displayValue, setDisplayValue] = useState(0);
     useEffect(() => {
-        fetchHistoryData();
-    }, [fetchHistoryData]);
-
-    // --- FITUR TAMBAHAN: Logika Filter dan Sort ---
-    const getSortedAndFilteredHistory = () => {
-        let filteredList = historyList.filter(item => 
-            // Filter berdasarkan nama file ATAU kode voucher
-            item.filename.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            item.codes.some(code => code.includes(searchTerm))
-        );
-
-        return filteredList.sort((a, b) => {
-            let aValue, bValue;
-
-            switch (sortBy) {
-                case 'count':
-                    aValue = a.count;
-                    bValue = b.count;
-                    break;
-                case 'filename':
-                    aValue = a.filename.toLowerCase();
-                    bValue = b.filename.toLowerCase();
-                    break;
-                case 'timestamp':
-                default:
-                    aValue = a.timestamp;
-                    bValue = b.timestamp;
-                    break;
-            }
-
-            if (aValue < bValue) return sortOrder === 'asc' ? -1 : 1;
-            if (aValue > bValue) return sortOrder === 'asc' ? 1 : -1;
-            return 0;
-        });
-    };
-    // -----------------------------------------------
-
-    const handleRename = async (itemId) => {
-        if (isRenaming === itemId) {
-            if (!newFilename.trim()) {
-                 showStatus("Nama file tidak boleh kosong.", 'error');
-                 return;
-            }
-            setIsLoading(true);
-            try {
-                await updateFilename(itemId, newFilename, showStatus);
-                setHistoryList(prevList => prevList.map(item => 
-                    item.id === itemId ? { ...item, filename: newFilename.trim() } : item
-                ));
-                showStatus(`Nama file riwayat berhasil diperbarui menjadi ${newFilename.trim()}.`, 'success');
-                setIsRenaming(null);
-                setNewFilename('');
-            } catch (err) {
-                // Error handled in utility
-            } finally {
-                setIsLoading(false);
-            }
-        } else {
-            const currentItem = historyList.find(item => item.id === itemId);
-            if (currentItem) {
-                setNewFilename(currentItem.filename.replace(/\.csv$/i, '')); 
-                setIsRenaming(itemId);
-            }
-        }
-    };
-    
-    const handleDelete = async (itemId, filename) => {
-        if (!window.confirm(`Anda yakin ingin menghapus riwayat ekstraksi "${filename}"? Aksi ini tidak dapat dibatalkan.`)) {
-            return;
-        }
-        setIsLoading(true);
-        try {
-            await deleteHistoryItem(itemId, filename, showStatus);
-            setHistoryList(prevList => prevList.filter(item => item.id !== itemId));
-            showStatus(`Riwayat ekstraksi "${filename}" berhasil dihapus.`, 'success');
-        } catch (err) {
-             // Error handled in utility
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    const downloadHistoryCodes = (codes, filename) => {
-        if (codes.length === 0) return;
-        const csvContent = codes.map(code => `"${code}"`).join('\n'); 
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        const finalFilename = filename.trim().replace(/\.csv$/i, '') || 'extracted_vouchers_download';
-        link.setAttribute('href', url);
-        link.setAttribute('download', `${finalFilename}.csv`);
-        link.style.visibility = 'hidden';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        showStatus('File CSV riwayat berhasil diunduh.', 'success');
-    };
-    
-    // Gunakan hasil filter dan sort
-    const displayList = getSortedAndFilteredHistory();
-
-    const sidebar = (
-        <div className="hidden lg:flex w-64 bg-white p-6 flex-col h-screen sticky top-0 shadow-lg border-r border-gray-200">
-             <div className="flex items-center mb-10 pb-4 border-b border-gray-200">
-                <svg className="w-8 h-8 text-navy-accent mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 7a2 2 0 012 2v2m4-2h-3m4 2v7a2 2 0 01-2 2H5a2 2 0 01-2-2V9a2 2 0 012-2h2m2 4h10m0 0l-3 3m3-3l-3-3" />
-                </svg>
-                <h1 className="text-xl font-extrabold text-gray-800">
-                    Voucher <span className="text-navy-accent">Panel</span>
-                </h1>
-            </div>
-            <nav className="space-y-2 flex-grow">
-                <a href="#" onClick={(e) => { e.preventDefault(); handleNavigate('extraction'); }} className="flex items-center p-3 text-sm font-semibold text-gray-700 hover:bg-gray-100 rounded-lg transition duration-200">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-3" viewBox="0 0 20 20" fill="currentColor"><path d="M7 3a1 1 0 000 2h6a1 1 0 100-2H7zM4 9a1 1 0 100 2h12a1 1 0 100-2H4zM7 15a1 1 0 100 2h6a1 1 0 100-2H7z" /></svg>
-                    <span>Ekstraksi</span>
-                </a>
-                <a href="#" onClick={(e) => e.preventDefault()} className="flex items-center p-3 text-sm font-semibold text-white bg-navy-accent rounded-lg shadow-md transition duration-200">
-                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 10h16M4 14h16M4 18h16" /></svg>
-                    <span>Arsip / History (Active)</span>
-                </a>
-            </nav>
-            <div className="mt-auto pt-4 border-t border-gray-200">
-                <p className="text-xs text-gray-500 mb-2">Status: {userId ? <span className="text-green-600 font-medium">Connected</span> : <span className="text-yellow-600 font-medium">Connecting...</span>}</p>
-                <button onClick={() => { localStorage.removeItem('isLoggedIn'); window.location.reload(); }} className="w-full py-2 bg-red-500 text-white text-sm font-semibold rounded-lg hover:bg-red-600 transition duration-200 shadow-md">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 inline mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg> Logout
-                </button>
-            </div>
-        </div>
-    );
-
-    const HistoryContent = () => {
-        if (isLoading && historyList.length === 0) {
-            return (
-                <div className="text-center py-20">
-                    <svg className="animate-spin mx-auto h-10 w-10 text-navy-accent" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                    <p className="mt-3 text-lg text-gray-600">Memuat riwayat ekstraksi...</p>
-                </div>
-            );
-        }
-        if (error) {
-            return (<div className="text-center py-20 text-red-600"><p className="text-xl font-bold">Terjadi Kesalahan</p><p>{error}</p></div>);
-        }
-        if (historyList.length === 0) {
-            return (<div className="text-center py-20 text-gray-500"><p className="text-xl font-bold">Tidak Ada Riwayat</p><p>Mulai ekstraksi voucher pertama Anda di halaman Ekstraksi.</p></div>);
-        }
-        
-        if (displayList.length === 0) {
-            return (<div className="text-center py-20 text-gray-500"><p className="text-xl font-bold">Data Tidak Ditemukan</p><p>Coba ubah kata kunci pencarian atau pengaturan filter Anda.</p></div>);
-        }
-        
-        return (
-            <div className="space-y-4">
-                {displayList.map((item) => (
-                    <div key={item.id} className="main-card p-5 flex flex-col justify-between items-start hover:shadow-lg transition duration-300">
-                        <div className="w-full">
-                            <div className="flex items-center justify-between mb-3 border-b pb-3">
-                                <div className="flex items-baseline">
-                                    <span className="text-3xl font-extrabold text-navy-accent mr-3">{item.count}</span>
-                                    <span className="text-lg font-semibold text-gray-700">Kode Unik Diekstrak</span>
-                                </div>
-                                <p className="text-sm font-medium text-gray-800">{formatDate(item.timestamp)}</p>
-                            </div>
-                            <div className="flex items-center mb-3">
-                                {isRenaming === item.id ? (
-                                    <>
-                                        <input type="text" value={newFilename} onChange={(e) => setNewFilename(e.target.value)} className="p-1 border border-gray-400 rounded-lg text-sm w-full font-semibold mr-2" disabled={isLoading} />
-                                        <button onClick={() => handleRename(item.id)} className="px-3 py-1 bg-green-500 text-white text-xs font-semibold rounded-lg" disabled={isLoading}>Simpan</button>
-                                         <button onClick={() => { setIsRenaming(null); setNewFilename(''); }} className="ml-2 px-3 py-1 bg-gray-500 text-white text-xs font-semibold rounded-lg" disabled={isLoading}>Batal</button>
-                                    </>
-                                ) : (
-                                    <>
-                                        <p className="text-sm text-gray-700 font-semibold truncate mr-3">Nama File: <span className="text-navy-accent">{item.filename}.csv</span></p>
-                                        <button onClick={() => handleRename(item.id)} className="px-2 py-0.5 bg-gray-200 text-gray-700 text-xs font-semibold rounded-md" disabled={isLoading}><svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 inline" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg></button>
-                                    </>
-                                )}
-                            </div>
-                             <p className="text-sm text-gray-500 mb-4"><span className='font-semibold'>Sumber:</span> Dari {item.sourceFiles.length} file.</p>
-                        </div>
-                        <div className="w-full flex flex-wrap justify-end gap-3 border-t pt-4">
-                            <button onClick={() => downloadHistoryCodes(item.codes, item.filename)} className="px-4 py-2 bg-gold-accent text-navy-accent text-sm font-semibold rounded-lg hover:bg-yellow-500 transition shadow-md flex-grow sm:flex-grow-0" disabled={isLoading}>Unduh CSV</button>
-                            <button onClick={() => handleDelete(item.id, item.filename)} className="px-4 py-2 bg-red-500 text-white text-sm font-semibold rounded-lg hover:bg-red-600 transition shadow-md flex-grow sm:flex-grow-0" disabled={isLoading}>Hapus</button>
-                        </div>
-                    </div>
-                ))}
-            </div>
-        );
-    };
-
-    return (
-        <div className="min-h-screen bg-gray-50 flex">
-            <style jsx global>{`
-                :root { --color-navy-accent: #0f172a; --color-gold-accent: #fbbf24; --color-main-bg: #ffffff; --color-panel-bg: #f9fafb; }
-                .text-navy-accent { color: var(--color-navy-accent); }
-                .bg-navy-accent { background-color: var(--color-navy-accent); }
-                .bg-gold-accent { background-color: var(--color-gold-accent); }
-                .main-card { background-color: var(--color-main-bg); border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.06); color: #1f2937; border: 1px solid #f3f4f6; }
-                .text-title { color: var(--color-navy-accent); }
-            `}</style>
-            {sidebar}
-            <div className="flex-grow p-5 lg:p-10 bg-gray-50 pb-20"> 
-                {/* --- HEADER DIMODIFIKASI UNTUK FILTER & SORT --- */}
-                <header className="mb-6 lg:mb-10 flex flex-col justify-between items-start pb-4 border-b border-gray-200">
-                    <h2 className="text-2xl sm:text-3xl font-light text-gray-800 tracking-wider mb-4">Riwayat Ekstraksi</h2>
-                    <div className="w-full flex flex-wrap gap-4 items-center">
-                        {/* Search Input */}
-                        <input 
-                            type="text" 
-                            placeholder="Cari berdasarkan nama file atau kode..." 
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="flex-grow p-2 border border-gray-300 rounded-lg shadow-sm text-sm"
-                            disabled={isLoading}
-                        />
-                        {/* Sort By Select */}
-                        <select 
-                            value={sortBy} 
-                            onChange={(e) => setSortBy(e.target.value)}
-                            className="p-2 border border-gray-300 rounded-lg shadow-sm text-sm bg-white"
-                            disabled={isLoading}
-                        >
-                            <option value="timestamp">Urutkan: Tanggal</option>
-                            <option value="count">Urutkan: Jumlah Kode</option>
-                            <option value="filename">Urutkan: Nama File</option>
-                        </select>
-                        {/* Sort Order Button */}
-                        <button 
-                            onClick={() => setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')} 
-                            className="px-3 py-2 bg-gray-200 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-300 transition flex items-center"
-                            disabled={isLoading}
-                        >
-                            {/* Ikon panah berdasarkan urutan */}
-                            {sortOrder === 'desc' ? (
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" viewBox="0 0 20 20" fill="currentColor"><path d="M3 3a1 1 0 000 2h11a1 1 0 100-2H3zM3 7a1 1 0 000 2h7a1 1 0 100-2H3zM3 11a1 1 0 100 2h4a1 1 0 100-2H3zM15.707 15.707a1 1 0 01-1.414 0l-3-3a1 1 0 011.414-1.414L14 14.586V10a1 1 0 112 0v4.586l1.293-1.293a1 1 0 011.414 1.414l-3 3z" /></svg>
-                            ) : (
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-1" viewBox="0 0 20 20" fill="currentColor"><path d="M3 3a1 1 0 000 2h11a1 1 0 100-2H3zM3 7a1 1 0 000 2h7a1 1 0 100-2H3zM3 11a1 1 0 100 2h4a1 1 0 100-2H3zM15.707 4.293a1 1 0 010 1.414l-3 3a1 1 0 01-1.414-1.414L14.586 6H10a1 1 0 110-2h4.586l-1.293-1.293a1 1 0 011.414-1.414l3 3z" /></svg>
-                            )}
-                            {sortOrder === 'desc' ? 'Urutan Menurun' : 'Urutan Menaik'}
-                        </button>
-                        <button onClick={() => fetchHistoryData()} className="flex items-center px-3 py-1.5 sm:px-4 sm:py-2 bg-gray-200 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-300 transition disabled:opacity-50" disabled={isLoading}>Refresh Data</button>
-                    </div>
-                </header>
-                {/* -------------------------------------------------- */}
-                <HistoryContent />
-            </div>
-        </div>
-    );
-}
-
-
-// =======================================================================
-// === KOMPONEN UTAMA DASHBOARD ===
-// =======================================================================
-function AppContainer({ showStatus, userId, handleLogout, currentPage, handleNavigate }) {
-    const [uploadedFiles, setUploadedFiles] = useState([]); 
-    const [uploadedFileBase64, setUploadedFileBase64] = useState([]); 
-    const [allDetectedCodes, setAllDetectedCodes] = useState([]); 
-    const [allProcessedDetails, setAllProcessedDetails] = useState([]); 
-    const [prompt, setPrompt] = useState(`Cari dan ekstrak **HANYA urutan angka yang tepat 18 digit** dari area bawah setiap voucher. Kualitas gambar sangat penting. Berikan HANYA KODE 18 digit tersebut (satu per baris). Abaikan SEMUA angka lain (seperti 12 digit barcode, tanggal, atau nomor seri pendek).`);
-    const [isLoading, setIsLoading] = useState(false);
-    const [processProgress, setProcessProgress] = useState(0); 
-    const [isEditMode, setIsEditMode] = useState(false);
-    const [uniqueCodesText, setUniqueCodesText] = useState('Hasil ekstraksi kode unik akan tampil di sini, satu per baris.');
-    const [showAllDetails, setShowAllDetails] = useState(false);
-    const [filenameInput, setFilenameInput] = useState('');
-    const [currentTime, setCurrentTime] = useState(new Date()); 
-
-    useEffect(() => {
-        const timer = setInterval(() => { setCurrentTime(new Date()); }, 1000); 
-        return () => clearInterval(timer);
-    }, []);
-    
-    const formatDateTime = (date) => {
-        return new Intl.DateTimeFormat('id-ID', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(date);
-    };
-
-    const uniqueCodesList = allDetectedCodes.reduce((acc, current) => {
-        if (!acc.uniqueSet.has(current.code)) {
-            acc.uniqueSet.add(current.code);
-            acc.uniqueList.push(current);
-        } else {
-            acc.duplicateList.push(current);
-        }
-        return acc;
-    }, { uniqueSet: new Set(), uniqueList: [], duplicateList: [] });
-    
-    const codeCount = uniqueCodesList.uniqueList.length;
-
-    const saveExtraction = useCallback(async (codesList, files, filename) => {
-        await saveCodesToDatabase(codesList, files, filename, userId, showStatus);
-    }, [userId, showStatus]);
-    
-    const resetExtractionState = useCallback((mode = 'full') => {
-        setAllDetectedCodes([]);
-        setAllProcessedDetails([]);
-        setUniqueCodesText('Hasil ekstraksi kode unik akan tampil di sini, satu per baris.');
-        if (mode === 'full') {
-            setUploadedFiles([]);
-            setUploadedFileBase64([]);
-            setFilenameInput(''); 
-        }
-        setIsEditMode(false);
-        setProcessProgress(0);
-    }, []);
-
-    const handleFileChange = async (event) => {
-        const files = Array.from(event.target.files);
-        if (files.length === 0) return;
-        resetExtractionState('soft');
-        const newFiles = [...uploadedFiles, ...files];
-        setUploadedFiles(newFiles);
-        try {
-            // resizeImageAndConvertToBase64 HARUS mengembalikan objek yang mengandung { base64, dataURL, name }
-            const base64Promises = files.map(file => resizeImageAndConvertToBase64(file));
-            const newBase64Data = await Promise.all(base64Promises);
-            setUploadedFileBase64(prev => [...prev, ...newBase64Data]);
-            showStatus(`Berhasil mengunggah dan mengoptimasi ${files.length} gambar. ✅ Siap memproses.`, 'success');
-        } catch (error) {
-            console.error("Error processing files:", error);
-            showStatus('Gagal memproses salah satu gambar. Coba lagi.', 'error');
-        }
-    };
-    
-    const removeImage = (indexToRemove) => {
-        setUploadedFiles(prev => prev.filter((_, index) => index !== indexToRemove));
-        setUploadedFileBase64(prev => prev.filter((_, index) => index !== indexToRemove));
-        if (allDetectedCodes.length > 0) resetExtractionState('soft');
-    };
-    
-    const handleGenerate = async () => {
-        if (uploadedFiles.length === 0) {
-            showStatus('Mohon unggah minimal satu gambar voucher.', 'error');
-            return;
-        }
-        resetExtractionState('soft');
-        setIsLoading(true);
-        showStatus(`Memulai ekstraksi untuk ${uploadedFiles.length} gambar via Gemini API...`, 'info');
-
-        const currentPrompt = prompt;
-        const newDetectedCodes = [];
-        const newProcessedDetails = [];
-
-        try {
-            for (let i = 0; i < uploadedFileBase64.length; i++) {
-                const fileData = uploadedFileBase64[i];
-                const fileName = uploadedFiles[i].name;
-                const progress = ((i + 1) / uploadedFileBase64.length) * 100;
-                setProcessProgress(progress);
-                
-                // MODIFIKASI: Menambahkan indikator [i+1/Total] pada showStatus
-                showStatus(`[${i + 1}/${uploadedFileBase64.length}] Memproses file: ${fileName}...`, 'info');
-
-                // MODIFIKASI: Ambil dataURL dari hasil konversi
-                const fileDataURL = uploadedFileBase64[i].dataURL; 
-
-                const rawResultText = await callGeminiApi(fileData.base64, currentPrompt, fileName);
-                
-                const allSequences = rawResultText.split('\n').map(line => line.trim()).filter(line => line.length > 0);
-                const extractedCodes = allSequences.filter(code => code.length === TARGET_DIGITS_REQUIRED && /^\d+$/.test(code));
-                
-                newProcessedDetails.push({
-                    file: uploadedFiles[i],
-                    extractedCodes: extractedCodes,
-                    allSequences: allSequences,
-                    // TAMBAHAN: Menyimpan dataURL untuk pratinjau gambar di detail mentah
-                    dataURL: fileDataURL, 
-                });
-                
-                extractedCodes.forEach(code => {
-                    newDetectedCodes.push({
-                        code: code,
-                        source: fileName,
-                        id: `${fileName}-${i}-${Math.random()}`, 
-                        fileIndex: i,
-                    });
-                });
-            }
-            
-            setAllDetectedCodes(newDetectedCodes);
-            setAllProcessedDetails(newProcessedDetails);
-            
-            const uniqueCodesExtracted = newDetectedCodes.reduce((acc, item) => {
-                if (!acc.set.has(item.code)) {
-                    acc.list.push(item);
-                    acc.set.add(item.code);
-                }
-                return acc;
-            }, { set: new Set(), list: [] });
-
-            const finalCodesText = uniqueCodesExtracted.list.map(item => item.code).join('\n');
-            setUniqueCodesText(finalCodesText || 'Tidak ada kode 18 digit yang terdeteksi.');
-            
-            showStatus(`✅ Ekstraksi selesai! Ditemukan ${uniqueCodesExtracted.list.length} kode unik 18 digit.`, 'success');
-            
-            // Simpan otomatis hanya jika ada kode yang terdeteksi
-            if (uniqueCodesExtracted.list.length > 0) {
-                 await saveExtraction({ uniqueList: uniqueCodesExtracted.list, uniqueSet: uniqueCodesExtracted.set }, uploadedFiles, filenameInput);
-            }
-           
-        } catch (error) {
-            console.error("Kesalahan saat memproses gambar:", error);
-            showStatus(`Terjadi kesalahan: ${error.message}. Ekstraksi gagal.`, 'error');
-        } finally {
-            setIsLoading(false);
-            setProcessProgress(0);
-        }
-    };
-    
-    const toggleEditMode = () => {
-        setIsEditMode(prev => {
-            const newState = !prev;
-            if (!newState) {
-                // Saat keluar dari mode edit, validasi kode yang dimasukkan
-                const validatedCodes = uniqueCodesText.split('\n').map(line => line.trim()).filter(line => line.match(/^\d{18}$/));
-                setUniqueCodesText(validatedCodes.join('\n'));
-                showStatus('Daftar kode unik divalidasi dan siap disalin/diunduh.', 'success');
+        let start = 0;
+        const end = parseInt(value);
+        if (start === end) return;
+        let timer = setInterval(() => {
+            start += Math.ceil(end / (duration / 20));
+            if (start >= end) {
+                setDisplayValue(end);
+                clearInterval(timer);
             } else {
-                showStatus('Mode Edit Aktif. Harap koreksi kode 18 digit Anda.', 'info');
+                setDisplayValue(start);
             }
-            return newState;
-        });
-    };
-    
-    const copyCodes = () => {
-        const codesToCopy = uniqueCodesText.trim();
-        if (codesToCopy) {
-            navigator.clipboard.writeText(codesToCopy).then(() => {
-                showStatus('Daftar kode unik berhasil disalin!', 'success');
-            }).catch(err => {
-                showStatus('Gagal menyalin. Harap salin secara manual.', 'error');
-            });
-        } else {
-             showStatus('Tidak ada kode unik untuk disalin.', 'info');
-        }
-    };
+        }, 20);
+        return () => clearInterval(timer);
+    }, [value, duration]);
+    return <span>{formatRP(displayValue)}</span>;
+};
 
-    const downloadCodes = () => {
-        const codesToDownload = uniqueCodesText.trim();
-        if (codesToDownload) {
-             const csvContent = codesToDownload.split('\n').map(code => `"${code}"`).join('\n');
-             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-             const url = URL.createObjectURL(blob);
-             const link = document.createElement('a');
-             const filename = filenameInput.trim().replace(/\.csv$/i, '') || 'extracted_vouchers';
-             link.setAttribute('href', url);
-             link.setAttribute('download', `${filename}.csv`);
-             link.style.visibility = 'hidden';
-             document.body.appendChild(link);
-             link.click();
-             document.body.removeChild(link);
-             showStatus('File CSV kode unik berhasil diunduh.', 'success');
-        } else {
-            showStatus('Tidak ada kode unik untuk diunduh.', 'info');
-        }
-    };
-    
-    const checkPotentialDuplicates = (uniqueList) => {
-        const potentialMatches = [];
-        const checks = new Set(); 
-        const TARGET_DIGITS_REQUIRED = 18; // Pastikan ini konsisten dengan impor
-        for (let i = 0; i < uniqueList.length; i++) {
-            for (let j = i + 1; j < uniqueList.length; j++) {
-                const codeA = uniqueList[i].code;
-                const codeB = uniqueList[j].code;
-                if (checks.has(`${codeA}|${codeB}`) || checks.has(`${codeB}|${codeA}`)) continue;
+const formatRP = (val) => new Intl.NumberFormat('id-ID', { 
+    style: 'currency', 
+    currency: 'IDR', 
+    maximumFractionDigits: 0 
+}).format(val || 0);
 
-                let isPotential = false;
-                const matchDetails = [];
-                let diffCount = 0;
-                for(let k = 0; k < TARGET_DIGITS_REQUIRED; k++) {
-                    if (codeA[k] !== codeB[k]) diffCount++;
-                }
-                if (diffCount === 1) {
-                    isPotential = true;
-                    matchDetails.push("Beda 1 digit");
-                }
-                const checkLengths = [8, 10, 12]; 
-                for (const len of checkLengths) {
-                    if (codeA.substring(0, len) === codeB.substring(0, len)) {
-                         isPotential = true;
-                         matchDetails.push(`Awal ${len} digit`);
-                    }
-                    if (codeA.substring(TARGET_DIGITS_REQUIRED - len) === codeB.substring(TARGET_DIGITS_REQUIRED - len)) {
-                         isPotential = true;
-                         matchDetails.push(`Akhir ${len} digit`);
-                    }
-                }
-                if (isPotential) {
-                    potentialMatches.push(`${codeA} vs ${codeB} (${[...new Set(matchDetails)].join(', ')})`);
-                    checks.add(`${codeA}|${codeB}`);
-                }
-            }
-        }
-        return potentialMatches;
-    };
-
-    const renderDuplicateList = () => {
-        const duplicateList = uniqueCodesList.duplicateList;
-        if (duplicateList.length === 0) return { display: 'hidden', text: 'Tidak ada instance kode duplikat yang terdeteksi.' };
-        const duplicateCodesText = duplicateList.map(item => `${item.code} (File: ${uploadedFiles[item.fileIndex]?.name || 'N/A'})`).join('\n');
-        return { display: '', text: duplicateCodesText };
-    };
-
-    const renderPotentialDuplicates = () => {
-        const potentialMatches = checkPotentialDuplicates(uniqueCodesList.uniqueList);
-        if (potentialMatches.length === 0) return { display: 'hidden', text: 'Tidak ada potensi duplikat yang terdeteksi.' };
-        return { display: '', text: potentialMatches.join('\n') };
-    };
-
-    // MODIFIKASI FUNGSI INI UNTUK MENGEMBALIKAN DATA ARRAY BUKAN STRING
-    const renderProcessedDetails = () => {
-        if (allProcessedDetails.length === 0 || !showAllDetails) return { display: 'hidden', data: [] };
-        
-        const detailsData = allProcessedDetails.map(detail => {
-            const fileName = detail.file.name;
-            const extractedCodes = detail.extractedCodes.join(', ') || 'TIDAK ADA KODE 18 DIGIT YANG VALID';
-            const allSequences = detail.allSequences.join(' | ');
-            
-            return {
-                fileName: fileName,
-                validCodes: extractedCodes,
-                rawSequences: allSequences,
-                dataURL: detail.dataURL, // Data URL base64 untuk pratinjau gambar
-            };
-        });
-        return { display: '', data: detailsData };
-    };
-    
-    const sidebar = (
-        <div className="hidden lg:flex w-64 bg-white p-6 flex-col h-screen sticky top-0 shadow-lg border-r border-gray-200">
-             <div className="flex items-center mb-10 pb-4 border-b border-gray-200">
-                <svg className="w-8 h-8 text-navy-accent mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 7a2 2 0 012 2v2m4-2h-3m4 2v7a2 2 0 01-2 2H5a2 2 0 01-2-2V9a2 2 0 012-2h2m2 4h10m0 0l-3 3m3-3l-3-3" />
-                </svg>
-                <h1 className="text-xl font-extrabold text-gray-800">
-                    Voucher <span className="text-navy-accent">Panel</span>
-                </h1>
-            </div>
-
-            <nav className="space-y-2 flex-grow">
-                <a href="#" onClick={(e) => e.preventDefault()} className="flex items-center p-3 text-sm font-semibold text-white bg-navy-accent rounded-lg shadow-md transition duration-200">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-3" viewBox="0 0 20 20" fill="currentColor"><path d="M7 3a1 1 0 000 2h6a1 1 0 100-2H7zM4 9a1 1 0 100 2h12a1 1 0 100-2H4zM7 15a1 1 0 100 2h6a1 1 0 100-2H7z" /></svg>
-                    <span>Ekstraksi (Active)</span>
-                </a>
-                <a href="#" onClick={(e) => { e.preventDefault(); handleNavigate('history'); }} className="flex items-center p-3 text-sm font-semibold text-gray-700 hover:bg-gray-100 rounded-lg transition duration-200">
-                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 10h16M4 14h16M4 18h16" /></svg>
-                    <span>Arsip / History</span>
-                </a>
-            </nav>
-            <div className="mt-auto pt-4 border-t border-gray-200">
-                <p className="text-xs text-gray-500 mb-2">Status: {userId ? <span className="text-green-600 font-medium">Connected</span> : <span className="text-yellow-600 font-medium">Connecting...</span>}</p>
-                <button onClick={handleLogout} className="w-full py-2 bg-red-500 text-white text-sm font-semibold rounded-lg hover:bg-red-600 transition duration-200 shadow-md">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 inline mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg> Logout
-                </button>
-            </div>
-        </div>
-    );
-
-    return (
-        <div className="min-h-screen bg-gray-50 flex">
-            <style jsx global>{`
-                :root { --color-navy-accent: #0f172a; --color-gold-accent: #fbbf24; --color-main-bg: #ffffff; --color-panel-bg: #f9fafb; }
-                .text-navy-accent { color: var(--color-navy-accent); }
-                .bg-navy-accent { background-color: var(--color-navy-accent); }
-                .bg-gold-accent { background-color: var(--color-gold-accent); }
-                .main-card { background-color: var(--color-main-bg); border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.06); color: #1f2937; border: 1px solid #f3f4f6; }
-                .text-title { color: var(--color-navy-accent); }
-                .total-count-display { font-size: 1.5rem; line-height: 2rem; font-weight: 800; margin-left: 0.5rem; }
-                @keyframes dot-flashing { 0%, 100% { opacity: 0.2; } 50% { opacity: 1; } }
-                .dot { width: 6px; height: 6px; background-color: white; border-radius: 50%; margin-left: 3px; animation: dot-flashing 1s infinite alternate; }
-                .dot:nth-child(1) { animation-delay: 0s; }
-                .dot:nth-child(2) { animation-delay: 0.2s; }
-                .dot:nth-child(3) { animation-delay: 0.4s; }
-            `}</style>
-            
-            {sidebar}
-
-            <div className="flex-grow p-5 lg:p-10 bg-gray-50 pb-20"> 
-                <header className="mb-6 lg:mb-10 flex flex-col sm:flex-row justify-between items-start sm:items-center pb-4 border-b border-gray-200">
-                    <h2 className="text-2xl sm:text-3xl font-light text-gray-800 tracking-wider mb-3 sm:mb-0">Panel Ekstraksi Voucher</h2>
-                    <p className='text-sm text-gray-500'>Selamat datang, Tampan!</p>
-                </header>
-                
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-                    <div className="main-card p-4 lg:p-6 border-l-4 border-navy-accent hover:shadow-lg transition duration-300">
-                        <p className="text-sm font-medium text-gray-500">Total File Diproses</p>
-                        <span className="text-xl lg:text-2xl font-extrabold text-navy-accent block mt-1">{uploadedFiles.length}</span>
-                    </div>
-                    <div className="main-card p-4 lg:p-6 border-l-4 border-gold-accent hover:shadow-lg transition duration-300">
-                        <p className="text-sm font-medium text-gray-500">Kode Unik Ditemukan</p>
-                        <span id="card-code-count" className="text-xl lg:text-2xl font-extrabold text-gold-accent block mt-1">{codeCount}</span>
-                    </div>
-                    <div className="main-card p-4 lg:p-6 border-l-4 border-red-500 hover:shadow-lg transition duration-300">
-                        <p className="text-sm font-medium text-gray-500">Duplikat Eksak</p>
-                        <span className="text-xl lg:text-2xl font-extrabold text-red-500 block mt-1">{uniqueCodesList.duplicateList.length}</span>
-                    </div>
-                    <div className="main-card p-4 lg:p-6 border-l-4 border-gray-300 hover:shadow-lg transition duration-300">
-                        <p className="text-sm font-medium text-gray-500">Aktivitas Terkini</p>
-                        <div className="mt-1">
-                            <span className="text-base lg:text-lg font-extrabold text-gray-800 block">{formatDateTime(currentTime)}</span>
-                            <span className='text-xs text-green-500 font-semibold block mt-1'>{userId ? 'Firestore Aktif' : 'Menunggu Koneksi'}</span>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                    <div className="lg:col-span-1 space-y-8">
-                        <div className="main-card p-6">
-                            <h2 className="text-xl font-bold text-title mb-4 flex items-center border-b border-gray-200 pb-3">
-                                <span className="bg-navy-accent text-white rounded-full w-6 h-6 flex items-center justify-center mr-3 text-sm font-bold">1</span> Unggah File Voucher
-                            </h2>
-                            <input type="file" id="image-upload" className="hidden" accept="image/*" multiple onChange={handleFileChange} disabled={isLoading} />
-                            <label htmlFor="image-upload" className="custom-file-upload block mb-4">
-                                <div className="p-6 border-2 border-dashed border-gray-300 rounded-lg text-center cursor-pointer hover:border-navy-accent transition duration-200 bg-gray-50">
-                                    <svg className="mx-auto h-10 w-10 text-navy-accent mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-                                    <p className="text-sm font-semibold text-navy-accent">Klik untuk Unggah atau Seret & Lepas</p>
-                                    <p className="text-xs text-gray-500 mt-1">Hingga 10 file. Format: JPG/PNG</p>
-                                </div>
-                            </label>
-                            {uploadedFileBase64.length > 0 && (
-                                <div className="mt-4 border-t pt-4">
-                                    <h3 className="text-sm font-bold text-gray-700 mb-2">Pratinjau ({uploadedFiles.length} file)</h3>
-                                    <div className="grid grid-cols-3 gap-2 max-h-40 overflow-y-auto p-2 border rounded-lg bg-white">
-                                        {uploadedFileBase64.map((fileData, index) => (
-                                            <div key={index} className="relative group">
-                                                <img src={fileData.dataURL} alt={fileData.name} className="w-full h-auto rounded object-cover border"/>
-                                                <button onClick={() => removeImage(index)} className="absolute top-0 right-0 -mt-2 -mr-2 p-1 bg-red-500 text-white rounded-full text-xs opacity-0 group-hover:opacity-100 transition duration-150" title="Hapus gambar" disabled={isLoading}><svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg></button>
-                                            </div>
-                                        ))}
-                                    </div>
-                                    <button onClick={() => resetExtractionState('full')} className="mt-3 w-full py-1.5 bg-gray-200 text-gray-700 text-xs font-semibold rounded-lg hover:bg-gray-300 transition" disabled={isLoading}>Hapus Semua Gambar</button>
-                                </div>
-                            )}
-                        </div>
-
-                        <div className="main-card p-6">
-                            <h2 className="text-xl font-bold text-title mb-4 flex items-center border-b border-gray-200 pb-3">
-                                <span className="bg-navy-accent text-white rounded-full w-6 h-6 flex items-center justify-center mr-3 text-sm font-bold">2</span> Proses Ekstraksi
-                            </h2>
-                            <div className="mb-4">
-                                <label htmlFor="filename-input" className="block text-sm font-medium text-gray-700 mb-1">Nama File Simpan (Opsional)</label>
-                                <input type="text" id="filename-input" className="w-full p-2 border border-gray-300 rounded-lg text-sm" placeholder="Contoh: 4GB" value={filenameInput} onChange={(e) => setFilenameInput(e.target.value)} disabled={isLoading} />
-                            </div>
-                            <div className="mb-4">
-                                <label htmlFor="prompt-input" className="block text-sm font-medium text-gray-700 mb-1">Prompt Gemini (Default)</label>
-                                <textarea id="prompt-input" rows="4" className="w-full p-2 border border-gray-300 rounded-lg text-xs font-mono bg-gray-100 resize-none" value={prompt} onChange={(e) => setPrompt(e.target.value)} disabled={isLoading} />
-                            </div>
-                            <button id="generate-button" onClick={handleGenerate} className="w-full py-3 bg-navy-accent text-white text-base font-semibold rounded-lg shadow-xl hover:bg-gray-700 transition duration-200 disabled:opacity-50 disabled:bg-gray-400 flex items-center justify-center" disabled={uploadedFiles.length === 0 || isLoading}>
-                                <div id="loading-spinner" className={`flex items-end justify-center -ml-1 mr-3 h-5 w-5 ${isLoading ? '' : 'hidden'}`}><div className="dot"></div><div className="dot"></div><div className="dot"></div></div>
-                                <span id="button-text">{isLoading ? 'Memproses dengan Gemini...' : 'Mulai Proses Ekstraksi'}</span>
-                            </button>
-                            <div id="progress-container" className={`mt-3 h-1.5 bg-gray-200 rounded-full overflow-hidden ${isLoading ? '' : 'hidden'}`}><div id="progress-bar" className="h-full bg-gold-accent transition-all duration-300 ease-out" style={{ width: `${processProgress}%` }}></div></div>
-                        </div>
-                    </div>
-
-                    <div className="lg:col-span-2 space-y-8">
-                        <div id="unique-codes-card" className="main-card p-6">
-                            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 border-b border-gray-200 pb-3">
-                                <h2 className="text-xl font-bold text-title flex items-center mb-2 sm:mb-0">
-                                    <span className="bg-navy-accent text-white rounded-full w-6 h-6 flex items-center justify-center mr-3 text-sm font-bold">3</span> Kode Unik Ditemukan
-                                </h2>
-                                <div className="flex items-center p-2 rounded-md bg-gray-100 border border-gray-200">
-                                    <p className="text-base font-semibold text-gray-700">Total Unik:</p>
-                                    <span id="code-count" className="total-count-display text-gold-accent">{codeCount}</span>
-                                </div>
-                            </div>
-                            <textarea id="unique-code-display" rows="10" className={`w-full p-3 border rounded-lg font-mono text-sm resize-none transition duration-150 ${isEditMode ? 'bg-yellow-50 border-yellow-500 shadow-xl text-gray-800' : 'bg-gray-100 border-gray-300 text-gray-800'}`} placeholder={uniqueCodesText} value={uniqueCodesText} onChange={(e) => setUniqueCodesText(e.target.value)} readOnly={!isEditMode || isLoading} />
-                            <div className="mt-4 flex flex-col sm:flex-row justify-between gap-3">
-                                <button id="edit-toggle" className={`px-4 py-2.5 text-sm font-semibold rounded-lg shadow-md transition duration-200 disabled:opacity-50 w-full sm:w-auto ${isEditMode ? 'bg-green-500 text-white hover:bg-green-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`} disabled={codeCount === 0 || isLoading} onClick={toggleEditMode}>
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 inline mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
-                                    {isEditMode ? 'Selesai Edit & Validasi' : 'Mode Edit Manual'}
-                                </button>
-                                <div className='flex flex-col sm:flex-row gap-3 w-full sm:w-auto'>
-                                    <button id="copy-button" className="px-4 py-2.5 bg-navy-accent text-white text-sm font-semibold rounded-lg shadow-md hover:bg-gray-700 transition duration-200 disabled:opacity-50 disabled:bg-gray-300 disabled:text-gray-500 w-full sm:w-auto" disabled={codeCount === 0 || isLoading || isEditMode} onClick={copyCodes}>
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 inline mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h2a2 2 0 012 2v2m0 0h2m-2 2h2m-2 2h2m-2 2h2m-2 2h2m-2 2h2m-2 2h2" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a2 2 0 012 2v10a2 2 0 01-2 2H6a2 2 0 01-2-2V9a2 2 0 012-2h2" /></svg> Salin
-                                    </button>
-                                    <button id="download-button" className="px-4 py-2.5 bg-gold-accent text-navy-accent text-sm font-semibold rounded-lg shadow-md hover:bg-yellow-500 transition duration-200 disabled:opacity-50 disabled:bg-gray-300 disabled:text-gray-500 w-full sm:w-auto" disabled={codeCount === 0 || isLoading || isEditMode} onClick={downloadCodes}>
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 inline mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg> Unduh CSV
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                            <div id="duplicate-codes-card" className={`main-card p-6 border-l-4 border-red-500 ${renderDuplicateList().display === 'hidden' ? 'opacity-70' : ''}`}>
-                                <h2 className="text-lg font-bold text-red-700 mb-3 flex items-center border-b border-gray-200 pb-2">
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-red-500 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg> Duplikat Eksak
-                                </h2>
-                                <p className="text-xs text-red-600 mb-3">Kode ini terdeteksi di file berbeda. Tidak dihitung unik.</p>
-                                <textarea id="duplicate-code-display" rows="6" className="w-full p-3 border rounded-lg font-mono text-xs bg-gray-100 text-gray-700 resize-none" value={renderDuplicateList().text} readOnly />
-                            </div>
-                             <div id="potential-duplicates-card" className={`main-card p-6 border-l-4 border-yellow-500 ${renderPotentialDuplicates().display === 'hidden' ? 'opacity-70' : ''}`}>
-                                <h2 className="text-lg font-bold text-yellow-700 mb-3 flex items-center border-b border-gray-200 pb-2">
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-yellow-500 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg> Potensi Duplikat
-                                </h2>
-                                <p className="text-xs text-yellow-700 mb-3">Kode dengan kesamaan tinggi. Perlu tinjauan manual.</p>
-                                <textarea id="potential-duplicate-display" rows="6" className="w-full p-3 border rounded-lg font-mono text-xs bg-gray-100 text-gray-700 resize-none" value={renderPotentialDuplicates().text} readOnly />
-                            </div>
-                        </div>
-
-                        <div id="raw-details-card" className={`main-card p-6 transition duration-300 ${allProcessedDetails.length === 0 ? 'opacity-50' : ''}`}>
-                            <h2 className="text-xl font-bold text-title mb-4 flex items-center border-b border-gray-200 pb-3 cursor-pointer" onClick={() => setShowAllDetails(prev => !prev)}>
-                                <span className="bg-navy-accent text-white rounded-full w-6 h-6 flex items-center justify-center mr-3 text-sm font-bold">4</span> Detail Hasil Mentah ({showAllDetails ? 'Sembunyikan' : 'Tampilkan'})
-                                <svg xmlns="http://www.w3.org/2000/svg" className={`h-5 w-5 ml-auto text-gray-500 transition-transform ${showAllDetails ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
-                            </h2>
-                            {showAllDetails && (
-                                <div className="space-y-6">
-                                    {/* MODIFIKASI: Mengganti textarea dengan loop card */}
-                                    {renderProcessedDetails().data.length > 0 ? (
-                                        renderProcessedDetails().data.map((detail, index) => (
-                                            <div key={index} className="border border-gray-200 p-4 rounded-lg bg-white shadow-sm">
-                                                <h4 className="text-base font-bold text-navy-accent mb-2">File: {detail.fileName}</h4>
-                                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                                                    {/* Kolom Gambar Pratinjau */}
-                                                    <div className="sm:col-span-1 flex justify-center items-start">
-                                                        <img 
-                                                            src={detail.dataURL} 
-                                                            alt={`Pratinjau ${detail.fileName}`} 
-                                                            className="w-full h-auto max-h-48 object-contain rounded-lg border border-gray-300 shadow-md cursor-pointer"
-                                                            // Tambahkan onClick untuk melihat gambar secara penuh di tab baru
-                                                            onClick={() => window.open(detail.dataURL, '_blank')}
-                                                        />
-                                                    </div>
-                                                    {/* Kolom Detail Teks */}
-                                                    <div className="sm:col-span-2 space-y-2">
-                                                        <p className="text-sm font-semibold text-gray-700">Kode Valid (18 digit): <span className="font-mono text-base text-green-600 font-bold">{detail.validCodes}</span></p>
-                                                        <div>
-                                                            <p className="text-sm font-semibold text-gray-700 mt-3">Semua Urutan Mentah (Dipisahkan oleh |):</p>
-                                                            {/* Menggunakan <pre> dengan whitespace-pre-wrap agar mudah dibaca */}
-                                                            <pre className="p-2 border rounded-lg bg-gray-50 font-mono text-xs text-gray-600 max-h-32 overflow-y-auto whitespace-pre-wrap break-all">{detail.rawSequences}</pre>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        ))
-                                    ) : (
-                                        <p className="p-3 border rounded-lg font-mono text-xs bg-gray-100 text-gray-700 resize-none">Detail hasil mentah dari setiap file yang diproses akan muncul di sini setelah proses ekstraksi selesai.</p>
-                                    )}
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
-}
-
-// =======================================================================
-// === KOMPONEN LOGIN SCREEN ===
-// =======================================================================
-function LoginScreen({ handleLogin, statusMessage }) {
-    const [isAuthenticating, setIsAuthenticating] = useState(false);
-    const [username, setUsername] = useState(''); // State untuk username
-    const [password, setPassword] = useState(''); // State untuk password
-    
-    // Logika login sekarang berada di dalam handleLoginClick
-    const handleLoginClick = async () => {
-        if (!username || !password) {
-            alert("Username dan Password wajib diisi.");
-            return;
-        }
-        
-        setIsAuthenticating(true);
-        try {
-            // Panggil handleLogin dari App dengan username dan password
-            await handleLogin(username, password);
-        } finally {
-            setIsAuthenticating(false);
-        }
-    }
-    
-    return (
-        <div className="min-h-screen bg-navy-accent flex items-center justify-center p-4">
-             <style jsx global>{`
-                .text-navy-accent { color: #0f172a; }
-                .bg-navy-accent { background-color: #0f172a; }
-                .bg-gold-accent { background-color: #fbbf24; }
-                .bg-status-red { background-color: #fef2f2; border-color: #fca5a5; color: #b91c1c; }
-                .bg-status-blue { background-color: #eff6ff; border-color: #93c5fd; color: #1d4ed8; }
-            `}</style>
-            <div className="w-full max-w-md bg-white p-8 rounded-xl shadow-2xl border-t-4 border-gold-accent">
-                <div className="text-center mb-8">
-                    <svg className="mx-auto w-12 h-12 text-navy-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 7a2 2 0 012 2v2m4-2h-3m4 2v7a2 2 0 01-2 2H5a2 2 0 01-2-2V9a2 2 0 012-2h2m2 4h10m0 0l-3 3m3-3l-3-3" /></svg>
-                    <h1 className="text-2xl font-extrabold text-gray-800 mt-3">Panel Admin Login</h1> 
-                    <p className="text-gray-500">Ekstraksi Voucher</p>
-                </div>
-                <div className="space-y-4">
-                    {/* Input Username */}
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="username">Username</label>
-                        <input 
-                            id="username"
-                            type="text"
-                            value={username}
-                            onChange={(e) => setUsername(e.target.value)}
-                            className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-navy-accent focus:border-navy-accent"
-                            placeholder="Masukkan Username"
-                            disabled={isAuthenticating}
-                        />
-                    </div>
-                    {/* Input Password */}
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="password">Password</label>
-                        <input 
-                            id="password"
-                            type="password" 
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            className="w-full p-3 border border-gray-300 rounded-lg shadow-sm focus:ring-navy-accent focus:border-navy-accent"
-                            placeholder="Masukkan Password"
-                            disabled={isAuthenticating}
-                        />
-                    </div>
-                    
-                    <button onClick={handleLoginClick} className="w-full py-3 bg-gold-accent text-navy-accent text-lg font-bold rounded-lg hover:bg-yellow-500 transition duration-200 shadow-md flex items-center justify-center disabled:opacity-70" disabled={isAuthenticating}>
-                        {isAuthenticating ? (<span className='flex items-center'><svg className="animate-spin h-5 w-5 text-navy-accent mr-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Memverifikasi... </span>) : 'Login'}
-                    </button>
-                </div>
-                 {statusMessage.text && (
-                    <div className={`mt-5 p-3 rounded-lg border text-sm ${statusMessage.type === 'error' ? 'bg-status-red border-red-400 text-red-800' : 'bg-status-blue border-blue-400 text-blue-800'}`} role="alert">{statusMessage.text}</div>
-                )}
-                <p className='text-xs text-gray-400 text-center mt-4'>Didukung oleh Py.</p>
-            </div>
-        </div>
-    );
-}
-
-// =======================================================================
-// === KOMPONEN UTAMA APP (Root Component) ===
-// =======================================================================
 function App() {
-    const [isLoggedIn, setIsLoggedIn] = useState(localStorage.getItem('isLoggedIn') === 'true');
-    const [userId, setUserId] = useState(localStorage.getItem('userId') || null); 
-    const [currentPage, setCurrentPage] = useState('extraction'); 
-    const [statusMessage, setStatusMessage] = useState({ text: null, type: 'info' });
-    const statusTimeoutRef = useRef(null);
+    // --- FITUR LOGIN ---
+    const [isLoggedIn, setIsLoggedIn] = useState(false);
+    const [usernameInput, setUsernameInput] = useState("");
+    const [passwordInput, setPasswordInput] = useState("");
+    
+    // Kredensial diambil dari .env
+    const AUTH_CREDENTIALS = { 
+        user: process.env.REACT_APP_ADMIN_USER || "", 
+        pass: process.env.REACT_APP_ADMIN_PASS || "" 
+    };
 
-    const showStatus = useCallback((text, type = 'info', duration = 4000) => {
-        if (statusTimeoutRef.current) clearTimeout(statusTimeoutRef.current);
-        setStatusMessage({ text, type });
-        statusTimeoutRef.current = setTimeout(() => { setStatusMessage({ text: null, type: 'info' }); }, duration);
+    // --- STATE JAM & KONEKSI ---
+    const [currentTime, setCurrentTime] = useState(new Date());
+    const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+    // --- STATE DATA (Firestore) ---
+    const [currentPage, setCurrentPage] = useState('dashboard');
+    const [balances, setBalances] = useState({ DAS: 0, AMC: 0, HAO: 0 });
+    const [balanceDates, setBalanceDates] = useState({ DAS: '-', AMC: '-', HAO: '-' });
+    const [totals, setTotals] = useState({ jual: 0, modal: 0, profit: 0 });
+    const [dailyData, setDailyData] = useState({}); 
+    const [supplierDailyUsage, setSupplierDailyUsage] = useState({});
+    const [yesterdayBalances, setYesterdayBalances] = useState({ DAS: 0, AMC: 0, HAO: 0 });
+    const [filterDate, setFilterDate] = useState(new Date().toISOString().split('T')[0]);
+    const [inputTelpon, setInputTelpon] = useState("");
+    const [resultTelpon, setResultTelpon] = useState("");
+
+    // --- EFFECT: REALTIME SYNC DARI FIREBASE ---
+    useEffect(() => {
+        const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+        const handleOnline = () => setIsOnline(true);
+        const handleOffline = () => setIsOnline(false);
+        window.addEventListener('online', handleOnline);
+        window.addEventListener('offline', handleOffline);
+
+        if (localStorage.getItem('vpanel_auth') === 'true') setIsLoggedIn(true);
+
+        const unsub = onSnapshot(doc(db, "admin_data", "main_report"), (docSnap) => {
+            if (docSnap.exists()) {
+                const data = docSnap.data();
+                setBalances(data.balances || { DAS: 0, AMC: 0, HAO: 0 });
+                setBalanceDates(data.balanceDates || { DAS: '-', AMC: '-', HAO: '-' });
+                setTotals(data.totals || { jual: 0, modal: 0, profit: 0 });
+                setDailyData(data.dailyData || {});
+                setSupplierDailyUsage(data.supplierDailyUsage || {});
+                setYesterdayBalances(data.yesterdayBalances || { DAS: 0, AMC: 0, HAO: 0 });
+            }
+        });
+
+        return () => {
+            clearInterval(timer);
+            window.removeEventListener('online', handleOnline);
+            window.removeEventListener('offline', handleOffline);
+            unsub();
+        };
     }, []);
 
-    // Fungsi handleLogin dengan username: admin, password: 1234
-    const handleLogin = async (inputUsername, inputPassword) => {
-        const EXPECTED_USERNAME = 'admin';
-        const EXPECTED_PASSWORD = '1234';
-
-        return new Promise(resolve => {
-            setTimeout(() => {
-                // Lakukan validasi
-                if (inputUsername === EXPECTED_USERNAME && inputPassword === EXPECTED_PASSWORD) {
-                    const mockUserId = `user-${Date.now()}`;
-                    localStorage.setItem('isLoggedIn', 'true');
-                    localStorage.setItem('userId', mockUserId);
-                    setIsLoggedIn(true);
-                    setUserId(mockUserId);
-                    showStatus('Login berhasil! Selamat datang di Voucher Panel.', 'success');
-                } else {
-                    showStatus('Login gagal. Username atau Password salah.', 'error');
-                }
-                resolve();
-            }, 1000); 
-        });
+    const handleLogin = (e) => {
+        e.preventDefault();
+        if (usernameInput === AUTH_CREDENTIALS.user && passwordInput === AUTH_CREDENTIALS.pass) {
+            setIsLoggedIn(true);
+            localStorage.setItem('vpanel_auth', 'true');
+        } else {
+            alert("Username atau Password Salah!");
+        }
     };
 
     const handleLogout = () => {
-        localStorage.removeItem('isLoggedIn');
-        localStorage.removeItem('userId');
-        setIsLoggedIn(false); 
-        setUserId(null);
-        showStatus('Anda telah logout. Sampai jumpa!', 'info');
+        setIsLoggedIn(false);
+        localStorage.removeItem('vpanel_auth');
     };
-    
-    const handleNavigate = (page) => { setCurrentPage(page); };
 
-    const renderStatusPopup = () => (
-        statusMessage.text &&
-        <div className={`fixed top-4 right-4 z-[100] max-w-sm p-4 rounded-lg shadow-xl text-sm font-medium transition-opacity duration-300 ${statusMessage.type === 'error' ? 'border-red-400 bg-red-100 text-red-800' : statusMessage.type === 'success' ? 'border-green-400 bg-green-100 text-green-800' : 'border-blue-400 bg-blue-100 text-blue-800'} border`} role="alert">
-            {statusMessage.text}
-        </div>
-    );
+    const syncToCloud = async (newData) => {
+        try {
+            await setDoc(doc(db, "admin_data", "main_report"), newData);
+        } catch (err) {
+            console.error("Error Syncing:", err);
+            alert("Gagal sinkronisasi ke Cloud!");
+        }
+    };
+
+    const handleReset = async () => {
+        if(window.confirm("Hapus seluruh data di Cloud Web Admin IFYOne?")) {
+            const emptyData = {
+                balances: { DAS: 0, AMC: 0, HAO: 0 },
+                balanceDates: { DAS: '-', AMC: '-', HAO: '-' },
+                totals: { jual: 0, modal: 0, profit: 0 },
+                dailyData: {},
+                supplierDailyUsage: {},
+                yesterdayBalances: { DAS: 0, AMC: 0, HAO: 0 }
+            };
+            await syncToCloud(emptyData);
+            alert("Data Berhasil Direset!");
+        }
+    };
+
+    // --- LOGIC PARSING ---
+    const parseNum = (val) => {
+        if (!val) return 0;
+        if (typeof val === 'number') return val;
+        let clean = val.replace(/\./g, "").replace(/,/g, ".");
+        return parseFloat(clean) || 0;
+    };
+
+    const parseFinalBalance = (text) => {
+        if (!text) return null;
+        let match = text.match(/Sal\s*([\d\.,]+)/i) || text.match(/([\d\.,]+)\s*@/);
+        return match ? parseNum(match[1]) : null;
+    };
+
+    const processFile = (file) => {
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            const sheet = workbook.Sheets[workbook.SheetNames[0]];
+            const jsonData = XLSX.utils.sheet_to_json(sheet, { raw: false });
+
+            let tempBalances = { ...balances };
+            let tempDates = { ...balanceDates };
+            let tempDaily = { ...dailyData };
+            let tempUsage = { ...supplierDailyUsage };
+            let tempYesterday = { ...yesterdayBalances };
+            
+            let lastUpdateTimes = { DAS: 0, AMC: 0, HAO: 0 };
+            let newAccJual = totals.jual;
+            let newAccModal = totals.modal;
+
+            jsonData.forEach(row => {
+                const getVal = (kws) => {
+                    const key = Object.keys(row).find(k => kws.some(kw => k.trim().toLowerCase() === kw.toLowerCase()));
+                    return row[key] ? String(row[key]).trim() : "";
+                };
+
+                const status = (getVal(['Status', 'Keterangan Status']) || "").toLowerCase();
+                const supplierRaw = getVal(['Nama Supplier', 'Supplier']).toUpperCase() || "UNKNOWN";
+                const message = getVal(['Message', 'Keterangan']);
+                const tglRaw = getVal(['Tanggal', 'Waktu']);
+                const currentRecordTime = new Date(tglRaw).getTime();
+                const dateOnly = tglRaw.split(' ')[0];
+
+                const hrgModal = parseNum(getVal(['Harga Modal', 'Modal', 'HPP']));
+                const hrgJual = parseNum(getVal(['Harga Jual', 'Harga', 'Jual']));
+
+                let sKey = null;
+                if (supplierRaw.includes('DAS')) sKey = 'DAS';
+                else if (supplierRaw.includes('AMC')) sKey = 'AMC';
+                else if (supplierRaw.includes('HAO')) sKey = 'HAO';
+
+                if (status === 'sukses' || status === 'success') {
+                    newAccModal += hrgModal;
+                    newAccJual += hrgJual;
+                    if(!tempDaily[dateOnly]) tempDaily[dateOnly] = { jual: 0, modal: 0, profit: 0 };
+                    tempDaily[dateOnly].jual += hrgJual;
+                    tempDaily[dateOnly].modal += hrgModal;
+                    tempDaily[dateOnly].profit += (hrgJual - hrgModal);
+
+                    if (sKey) {
+                        if (!tempUsage[dateOnly]) tempUsage[dateOnly] = { DAS: 0, AMC: 0, HAO: 0 };
+                        tempUsage[dateOnly][sKey] += hrgModal;
+                    }
+                }
+
+                if (sKey) {
+                    const saldoBaru = parseFinalBalance(message);
+                    if (saldoBaru !== null && currentRecordTime >= lastUpdateTimes[sKey]) {
+                        tempBalances[sKey] = saldoBaru;
+                        tempDates[sKey] = tglRaw;
+                        lastUpdateTimes[sKey] = currentRecordTime;
+                    }
+                }
+            });
+
+            await syncToCloud({
+                balances: tempBalances,
+                balanceDates: tempDates,
+                totals: { jual: newAccJual, modal: newAccModal, profit: newAccJual - newAccModal },
+                dailyData: tempDaily,
+                yesterdayBalances: tempYesterday,
+                supplierDailyUsage: tempUsage
+            });
+
+            setCurrentPage('dashboard');
+        };
+        reader.readAsArrayBuffer(file);
+    };
+
+    const maxH = Math.max(totals.jual, 1);
+    const getBarHeight = (val) => `${(val / maxH) * 100}%`;
+
+    if (!isLoggedIn) {
+        return (
+            <div className="min-h-screen bg-[#050505] flex items-center justify-center p-6 relative overflow-hidden">
+                <div className="absolute top-0 -left-4 w-72 h-72 bg-blue-600 rounded-full filter blur-3xl opacity-10"></div>
+                <div className="max-w-md w-full relative">
+                    <div className="bg-white/5 backdrop-blur-3xl border border-white/10 rounded-[3rem] p-12 shadow-2xl">
+                        <div className="text-center mb-10">
+                            <p className="text-slate-500 text-[9px] font-black uppercase tracking-[0.4em]">Cloud Database Terminal</p>
+                        </div>
+                        <form onSubmit={handleLogin} className="space-y-4">
+                            <input type="text" placeholder="Username" className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 px-6 text-white outline-none" value={usernameInput} onChange={(e) => setUsernameInput(e.target.value)} />
+                            <input type="password" placeholder="Password" className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 px-6 text-white outline-none" value={passwordInput} onChange={(e) => setPasswordInput(e.target.value)} />
+                            <button type="submit" className="w-full bg-blue-600 text-white py-4 rounded-2xl font-black uppercase mt-6">Access Dashboard</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        );
+    }
 
     return (
-        <>
-            {isLoggedIn && userId ? (
-                <>
-                    {currentPage === 'extraction' ? (
-                        <AppContainer showStatus={showStatus} userId={userId} handleLogout={handleLogout} currentPage={currentPage} handleNavigate={handleNavigate} />
-                    ) : (
-                        <HistoryPage userId={userId} showStatus={showStatus} handleNavigate={handleNavigate} />
-                    )}
-                    {renderStatusPopup()}
-                    <BottomNavBar currentPage={currentPage} handleNavigate={handleNavigate} />
-                </>
-            ) : (
-                <LoginScreen handleLogin={handleLogin} statusMessage={statusMessage} />
-            )}
-        </>
+        <div className="min-h-screen bg-[#f8fafc] flex font-sans text-[10px] text-slate-900">
+            {/* Sidebar */}
+            <aside className="w-60 bg-[#0f172a] text-white p-6 fixed h-full flex flex-col z-50">
+                <div className="flex items-center gap-3 mb-6 px-2">
+                    <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center font-black">I</div>
+                    <h2 className="text-sm font-black tracking-widest uppercase">IFYONE ADMIN</h2>
+                </div>
+
+                <div className="bg-white/5 rounded-2xl p-4 mb-8 border border-white/10">
+                    <div className="text-[16px] font-black text-blue-400 mb-1">{currentTime.toLocaleTimeString('id-ID', { hour12: false })}</div>
+                    <div className="text-[8px] font-bold text-slate-400 uppercase tracking-tighter mb-3">{currentTime.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long' })}</div>
+                    <div className="flex items-center gap-2 pt-2 border-t border-white/5">
+                        <div className={`w-2 h-2 rounded-full animate-pulse ${isOnline ? 'bg-emerald-500' : 'bg-red-500'}`}></div>
+                        <span className="text-[7px] font-black uppercase text-slate-300">{isOnline ? 'Cloud Sync Active' : 'Offline Mode'}</span>
+                    </div>
+                </div>
+                
+                <nav className="space-y-2 flex-grow">
+                    <button onClick={() => setCurrentPage('dashboard')} className={`w-full flex items-center gap-3 p-3 rounded-xl font-bold ${currentPage === 'dashboard' ? 'bg-blue-600 shadow-lg' : 'text-slate-400 hover:bg-white/5'}`}>📊 Dashboard</button>
+                    <button onClick={() => setCurrentPage('upload')} className={`w-full flex items-center gap-3 p-3 rounded-xl font-bold ${currentPage === 'upload' ? 'bg-blue-600' : 'text-slate-400 hover:bg-white/5'}`}>📤 Upload Data</button>
+                    <button onClick={() => setCurrentPage('v-telpon')} className={`w-full flex items-center gap-3 p-3 rounded-xl font-bold ${currentPage === 'v-telpon' ? 'bg-emerald-600' : 'text-slate-400 hover:bg-white/5'}`}>📞 Validasi Paket</button>
+                </nav>
+
+                <div className="mt-auto pt-6 border-t border-slate-800 space-y-3">
+                    <button onClick={handleReset} className="w-full text-left p-3 rounded-xl font-bold text-red-400 hover:bg-red-500/10 text-[9px]">🗑️ RESET CLOUD</button>
+                    <button onClick={handleLogout} className="w-full text-left p-3 rounded-xl font-bold text-slate-400 hover:bg-white/5 text-[9px]">🔓 KELUAR</button>
+                </div>
+            </aside>
+
+            {/* Main Content */}
+            <main className="ml-60 flex-grow p-10">
+                {currentPage === 'dashboard' ? (
+                    <div className="max-w-5xl mx-auto space-y-8">
+                        <div className="grid grid-cols-3 gap-6">
+                            <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-200">
+                                <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2">Penjualan (Cloud)</p>
+                                <h3 className="text-2xl font-black text-blue-600"><CountUp value={totals.jual} /></h3>
+                            </div>
+                            <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-200">
+                                <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2">Total Modal</p>
+                                <h3 className="text-2xl font-black text-slate-600"><CountUp value={totals.modal} /></h3>
+                            </div>
+                            <div className="bg-white p-6 rounded-[2.5rem] shadow-sm border border-slate-200 bg-emerald-50/20">
+                                <p className="text-[8px] font-black text-emerald-600 uppercase tracking-widest mb-2">Total Profit</p>
+                                <h3 className="text-2xl font-black text-emerald-600"><CountUp value={totals.profit} /></h3>
+                            </div>
+                        </div>
+
+                        {/* Chart Area */}
+                        <div className="bg-white p-10 rounded-[3rem] shadow-sm border border-slate-200">
+                            <div className="flex justify-between items-center mb-12">
+                                <h3 className="text-[11px] font-black uppercase text-slate-800">Performa Bisnis IFYOne</h3>
+                                <input type="date" className="bg-slate-50 border p-2 px-4 rounded-full font-bold text-[10px]" value={filterDate} onChange={(e) => setFilterDate(e.target.value)} />
+                            </div>
+                            <div className="relative h-64 border-l border-b border-slate-200 flex items-end justify-around px-10 pb-2">
+                                <div className="relative w-24 h-full flex flex-col justify-end">
+                                    <div className="w-full bg-blue-600 rounded-t-xl" style={{height: getBarHeight(totals.jual)}}></div>
+                                    <span className="absolute -bottom-8 left-0 right-0 text-center font-black text-slate-500 uppercase">Jual</span>
+                                </div>
+                                <div className="relative w-24 h-full flex flex-col justify-end">
+                                    <div className="w-full bg-slate-400 rounded-t-xl" style={{height: getBarHeight(totals.modal)}}></div>
+                                    <span className="absolute -bottom-8 left-0 right-0 text-center font-black text-slate-500 uppercase">Modal</span>
+                                </div>
+                                <div className="relative w-24 h-full flex flex-col justify-end">
+                                    <div className="w-full bg-emerald-500 rounded-t-xl" style={{height: getBarHeight(totals.profit)}}></div>
+                                    <span className="absolute -bottom-8 left-0 right-0 text-center font-black text-emerald-600 uppercase">Profit</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Supplier Section */}
+                        <div className="grid grid-cols-3 gap-6">
+                            {['DAS', 'AMC', 'HAO'].map(name => (
+                                <div key={name} className="bg-[#1e293b] text-white p-6 rounded-[2.5rem] shadow-xl relative overflow-hidden">
+                                    <div className="flex justify-between items-start mb-4 relative z-10">
+                                        <span className="text-blue-400 font-black tracking-widest text-[8px] uppercase">{name}</span>
+                                        <div className="text-right">
+                                            <p className="text-[6px] text-slate-500 uppercase font-black">Saldo Kemarin</p>
+                                            <p className="text-amber-400 font-bold text-[9px]">{formatRP(yesterdayBalances[name])}</p>
+                                        </div>
+                                    </div>
+                                    <p className="text-[7px] text-slate-400 font-bold uppercase mb-1">Saldo Cloud</p>
+                                    <h3 className="text-2xl font-black text-white"><CountUp value={balances[name]} /></h3>
+                                    <div className="pt-4 mt-4 border-t border-white/5 text-[7px] text-slate-500 font-bold uppercase">
+                                        Modal ({filterDate}): <span className="text-emerald-400">-{formatRP(supplierDailyUsage[filterDate]?.[name] || 0)}</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                ) : currentPage === 'v-telpon' ? (
+                    <div className="max-w-2xl mx-auto bg-white p-12 rounded-[3.5rem] shadow-2xl border border-slate-200">
+                        <h2 className="text-xl font-black uppercase text-slate-800 text-center mb-8">Validasi Paket Telpon</h2>
+                        <textarea className="w-full bg-slate-50 border-2 border-slate-100 rounded-[2rem] p-6 mb-6 font-mono text-[11px] h-40 outline-none" placeholder="Tempel respon supplier..." value={inputTelpon} onChange={(e) => setInputTelpon(e.target.value)} />
+                        <button onClick={() => {
+                             const text = inputTelpon;
+                             const mntMatch = text.match(/(\d+[\d\.]*)\s*(Menit|Mnt|m\b)/i);
+                             const mnt = mntMatch ? mntMatch[1].replace(/\./g, "") : "???";
+                             const hrMatch = text.match(/(\d+)\s*(Hari|Hr)/i);
+                             const hr = hrMatch ? hrMatch[1] : "??";
+                             const noMatch = text.match(/(08\d{8,11}|8\d{8,11})/);
+                             let no = noMatch ? noMatch[0] : "";
+                             no = no.startsWith('0') ? '62' + no.slice(1) : (no.startsWith('8') ? '62' + no : no);
+                             const snMatch = text.match(/(\d{15,25})/);
+                             const sn = snMatch ? snMatch[0] : "-";
+                             setResultTelpon(`Paket ${mnt} Mnt AllOpr (${hr} hari) telah aktif di nomor ${no}. SN ${sn}.`);
+                        }} className="w-full bg-emerald-600 text-white py-5 rounded-2xl font-black uppercase shadow-lg">Generate Template</button>
+                        {resultTelpon && (
+                            <div className="mt-10 p-8 bg-[#0f172a] rounded-[2.5rem] text-white relative">
+                                <p className="text-[7px] font-black text-emerald-400 uppercase mb-4 tracking-widest">Hasil:</p>
+                                <span className="block font-bold text-xs">{resultTelpon}</span>
+                                <button onClick={() => {navigator.clipboard.writeText(resultTelpon); alert("Tersalin!")}} className="absolute top-8 right-8 bg-white/10 p-2 rounded-xl">📋</button>
+                            </div>
+                        )}
+                    </div>
+                ) : (
+                    <div className="max-w-2xl mx-auto bg-white p-16 rounded-[4rem] shadow-2xl text-center border-4 border-dashed border-slate-100">
+                         <div className="w-20 h-20 bg-blue-50 rounded-[2rem] flex items-center justify-center text-3xl mx-auto mb-8">📤</div>
+                         <h2 className="text-2xl font-black mb-4 uppercase text-slate-800">Import Data ke Cloud</h2>
+                         <p className="text-slate-400 text-[10px] mb-10 max-w-xs mx-auto font-medium uppercase tracking-widest">Sinkronisasi data ke seluruh perangkat admin.</p>
+                         <input type="file" accept=".xlsx, .xls" onChange={(e) => processFile(e.target.files[0])} className="hidden" id="fUp" />
+                         <label htmlFor="fUp" className="inline-block bg-blue-600 text-white px-16 py-5 rounded-[2rem] font-black cursor-pointer shadow-xl hover:scale-105 transition-all uppercase tracking-widest">Pilih Dokumen Excel</label>
+                    </div>
+                )}
+            </main>
+        </div>
     );
 }
 
