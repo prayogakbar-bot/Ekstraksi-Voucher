@@ -19,7 +19,8 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
 // --- CONSTANTS ---
-const WEBHOOK_ID = process.env.REACT_APP_WEBHOOK_ID || ""; // Mengambil dari ENV sesuai memori [cite: 2025-12-19]
+// Mengambil dari ENV sesuai memori [cite: 2025-12-19]
+const WEBHOOK_ID = process.env.REACT_APP_WEBHOOK_ID || ""; 
 
 // --- HELPER: ANIMASI ANGKA BERJALAN (COUNT-UP) ---
 const CountUp = ({ value, duration = 1000 }) => {
@@ -54,7 +55,6 @@ function App() {
     const [usernameInput, setUsernameInput] = useState("");
     const [passwordInput, setPasswordInput] = useState("");
     
-    // Kredensial diambil dari .env
     const AUTH_CREDENTIALS = { 
         user: process.env.REACT_APP_ADMIN_USER || "", 
         pass: process.env.REACT_APP_ADMIN_PASS || "" 
@@ -131,7 +131,7 @@ function App() {
     };
 
     const handleReset = async () => {
-        if(window.confirm("Hapus seluruh data di Cloud Web Admin IFYOne?")) {
+        if(window.confirm("Hapus seluruh data di Cloud Web Admin?")) {
             const emptyData = {
                 balances: { DAS: 0, AMC: 0, HAO: 0 },
                 balanceDates: { DAS: '-', AMC: '-', HAO: '-' },
@@ -145,7 +145,6 @@ function App() {
         }
     };
 
-    // --- LOGIC PARSING ---
     const parseNum = (val) => {
         if (!val) return 0;
         if (typeof val === 'number') return val;
@@ -168,11 +167,13 @@ function App() {
             const sheet = workbook.Sheets[workbook.SheetNames[0]];
             const jsonData = XLSX.utils.sheet_to_json(sheet, { raw: false });
 
+            // LOGIC: Simpan saldo saat ini sebagai saldo kemarin sebelum update
+            let tempYesterday = { ...balances }; 
+            
             let tempBalances = { ...balances };
             let tempDates = { ...balanceDates };
             let tempDaily = { ...dailyData };
             let tempUsage = { ...supplierDailyUsage };
-            let tempYesterday = { ...yesterdayBalances };
             
             let lastUpdateTimes = { DAS: 0, AMC: 0, HAO: 0 };
             let newAccJual = totals.jual;
@@ -228,7 +229,7 @@ function App() {
                 balanceDates: tempDates,
                 totals: { jual: newAccJual, modal: newAccModal, profit: newAccJual - newAccModal },
                 dailyData: tempDaily,
-                yesterdayBalances: tempYesterday,
+                yesterdayBalances: tempYesterday, // Data tersimpan permanen di cloud
                 supplierDailyUsage: tempUsage
             });
 
@@ -265,8 +266,8 @@ function App() {
             {/* Sidebar */}
             <aside className="w-60 bg-[#0f172a] text-white p-6 fixed h-full flex flex-col z-50">
                 <div className="flex items-center gap-3 mb-6 px-2">
-                    <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center font-black">I</div>
-                    <h2 className="text-sm font-black tracking-widest uppercase">IFYONE ADMIN</h2>
+                    <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center font-black">V</div>
+                    <h2 className="text-sm font-black tracking-widest uppercase">V-PANEL ADMIN</h2>
                 </div>
 
                 <div className="bg-white/5 rounded-2xl p-4 mb-8 border border-white/10">
@@ -312,7 +313,7 @@ function App() {
                         {/* Chart Area */}
                         <div className="bg-white p-10 rounded-[3rem] shadow-sm border border-slate-200">
                             <div className="flex justify-between items-center mb-12">
-                                <h3 className="text-[11px] font-black uppercase text-slate-800">Performa Bisnis IFYOne</h3>
+                                <h3 className="text-[11px] font-black uppercase text-slate-800">Performa Bisnis Terminal</h3>
                                 <input type="date" className="bg-slate-50 border p-2 px-4 rounded-full font-bold text-[10px]" value={filterDate} onChange={(e) => setFilterDate(e.target.value)} />
                             </div>
                             <div className="relative h-64 border-l border-b border-slate-200 flex items-end justify-around px-10 pb-2">
@@ -338,14 +339,15 @@ function App() {
                                     <div className="flex justify-between items-start mb-4 relative z-10">
                                         <span className="text-blue-400 font-black tracking-widest text-[8px] uppercase">{name}</span>
                                         <div className="text-right">
+                                            {/* Saldo Kemarin terlihat di sini */}
                                             <p className="text-[6px] text-slate-500 uppercase font-black">Saldo Kemarin</p>
-                                            <p className="text-amber-400 font-bold text-[9px]">{formatRP(yesterdayBalances[name])}</p>
+                                            <p className="text-amber-400 font-bold text-[10px]">{formatRP(yesterdayBalances[name] || 0)}</p>
                                         </div>
                                     </div>
-                                    <p className="text-[7px] text-slate-400 font-bold uppercase mb-1">Saldo Cloud</p>
+                                    <p className="text-[7px] text-slate-400 font-bold uppercase mb-1">Saldo Cloud Saat Ini</p>
                                     <h3 className="text-2xl font-black text-white"><CountUp value={balances[name]} /></h3>
                                     <div className="pt-4 mt-4 border-t border-white/5 text-[7px] text-slate-500 font-bold uppercase">
-                                        Modal ({filterDate}): <span className="text-emerald-400">-{formatRP(supplierDailyUsage[filterDate]?.[name] || 0)}</span>
+                                        Pemakaian ({filterDate}): <span className="text-emerald-400">-{formatRP(supplierDailyUsage[filterDate]?.[name] || 0)}</span>
                                     </div>
                                 </div>
                             ))}
