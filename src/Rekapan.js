@@ -213,6 +213,7 @@ const DashboardContent = ({ externalBalances, totalProfit, yesterdayBalances, su
     }, [rekapData.lockedSupplierBalances, rekapData.manualSupplierAdjustments, externalBalances, yesterdayBalances, supplierDailyUsage, filterDate]);
 
     const results = useMemo(() => {
+        // Kalkulasi Saldo Agen
         const totalSaldoAgen = agents
             .filter(a => {
                 const n = a.name.toLowerCase();
@@ -220,7 +221,9 @@ const DashboardContent = ({ externalBalances, totalProfit, yesterdayBalances, su
             })
             .reduce((sum, a) => sum + (parseInt(a.balance) || 0), 0);
 
-        const bcaBersih = (rekapData.saldoBCA || 0) - totalSaldoAgen;
+        // 1. Hitung Bank Real (Hanya ini komponen perbankan yang masuk Aset)
+        const totalBankKotor = (rekapData.saldoBCA || 0) + (rekapData.saldoBRI || 0);
+        const totalBankReal = totalBankKotor - totalSaldoAgen;
         
         const dayOfMonth = new Date(selectedDate).getDate();
         const POTONGAN_PER_HARI = 2775;
@@ -228,6 +231,7 @@ const DashboardContent = ({ externalBalances, totalProfit, yesterdayBalances, su
         
         const settledNet = rekapData.settledDigiflazz > 0 ? (rekapData.settledDigiflazz - POTONGAN_PER_HARI) : 0;
         
+        // 2. Kalkulasi Seluruh Supplier
         const currentSupplierSum = (rekapData.sisaDigiflazz || 0) + 
                                     displaySupplierBalances.DAS.real + 
                                     displaySupplierBalances.AMC.real + 
@@ -235,10 +239,9 @@ const DashboardContent = ({ externalBalances, totalProfit, yesterdayBalances, su
                                     displaySupplierBalances.NEWBIEZ.real +
                                     displaySupplierBalances.OASIS.real;
 
-        const currentTotalAsset = bcaBersih + 
-                                   (rekapData.saldoBRI || 0) + 
-                                   currentSupplierSum + 
-                                   settledNet;
+        // 3. TOTAL ASET RIIL (Bank Real + Supplier + Settled)
+        // Note: Digiswitch, BCA (Input), BRI (Input), Agen tidak dijumlahkan lagi ke sini.
+        const currentTotalAsset = totalBankReal + currentSupplierSum + settledNet;
 
         const labaBersih = currentTotalAsset - (rekapData.modalUtama || 0);
         const profitBasis = (rekapData.profitCloudSistem || parseFloat(totalProfit) || 0);
@@ -256,7 +259,7 @@ const DashboardContent = ({ externalBalances, totalProfit, yesterdayBalances, su
             selisihProfit: finalSelisih, 
             profitBasis,
             totalPotonganAccumulated,
-            bcaBersih,
+            totalBankReal,
             totalSaldoAgen,
             isManualDiff: rekapData.manualDifference !== null,
             profitKotor: (activeStats.totalSales || 0) - (activeStats.totalCost || 0)
@@ -376,33 +379,34 @@ const DashboardContent = ({ externalBalances, totalProfit, yesterdayBalances, su
                 ["Laba Hari Ini (Gross)", f(results.profitKotor)],
                 [""],
                 ["III. RINCIAN ASET RIIL", "NOMINAL"],
-                ["Bank BCA (Input User)", f(rekapData.saldoBCA)],
-                ["Total Saldo Agen", f(results.totalSaldoAgen)],
-                ["BCA Bersih (BCA - Agen)", f(results.bcaBersih)],
-                ["Bank BRI", f(rekapData.saldoBRI)],
+                ["Bank Real (BCA+BRI - Agen)", f(results.totalBankReal)],
                 ["Settled Net (Hari Ini)", f(results.settledNetValue)],
-                ["Saldo Digiswitch (Catatan)", f(rekapData.saldoDigiswitch)],
                 ["Saldo Digiflazz", f(rekapData.sisaDigiflazz)],
                 ["Supplier DAS", f(displaySupplierBalances.DAS.real)],
                 ["Supplier AMC", f(displaySupplierBalances.AMC.real)],
                 ["Supplier HAO", f(displaySupplierBalances.HAO.real)],
                 ["Supplier NEWBIEZ", f(displaySupplierBalances.NEWBIEZ.real)],
                 ["Supplier OASIS", f(displaySupplierBalances.OASIS.real)],
-                ["TOTAL ASET RIIL", f(results.totalSisaSaldo)],
+                ["TOTAL ASET RIIL (FINAL)", f(results.totalSisaSaldo)],
                 [""],
-                ["IV. RINGKASAN PERHITUNGAN", "NOMINAL"],
+                ["IV. INFO PENDUKUNG (NON-ASET)", "NOMINAL"],
+                ["Bank BCA (Input)", f(rekapData.saldoBCA)],
+                ["Bank BRI (Input)", f(rekapData.saldoBRI)],
+                ["Total Saldo Agen", f(results.totalSaldoAgen)],
+                ["Digiswitch (Catatan)", f(rekapData.saldoDigiswitch)],
+                [""],
+                ["V. RINGKASAN PERHITUNGAN", "NOMINAL"],
                 ["Modal Utama", f(rekapData.modalUtama)],
                 ["Laba Bersih (Aset - Modal)", f(results.labaBersih)],
-                ["Total Profit", f(results.profitBasis)], 
-                ["Laba Hari Ini", f(results.profitKotor)], 
-                ["Akumulasi Potongan (2775 x Tgl " + dayNum + ")", f(results.totalPotonganAccumulated)],
+                ["Total Profit (System)", f(results.profitBasis)], 
+                ["Akumulasi Potongan Harian", f(results.totalPotonganAccumulated)],
                 ["SELISIH / VARIANCE", f(results.selisihProfit)],
                 [""],
-                ["V. PENGELUARAN OPERASIONAL", "NOMINAL"],
+                ["VI. PENGELUARAN OPERASIONAL", "NOMINAL"],
                 ...(rekapData.biayaOpsList || []).map(item => [item.name, f(item.amount)]),
                 ["TOTAL BIAYA OPS", f((rekapData.biayaOpsList || []).reduce((acc, curr) => acc + curr.amount, 0))],
                 [""],
-                ["VI. CATATAN ANALISIS"],
+                ["VII. CATATAN ANALISIS"],
                 [rekapData.catatanAnalisisLainnya || "Tidak ada catatan."]
             ];
 
@@ -420,17 +424,13 @@ const DashboardContent = ({ externalBalances, totalProfit, yesterdayBalances, su
             
             const caption = `LAPORAN REKAPAN HARIAN\n` +
                             `Tanggal: ${selectedDate}\n\n` +
-                            `STATISTIK TRANSAKSI\n` +
-                            `Total Transaksi: ${activeStats.totalTrx || 0}\n` +
-                            `Success Rate: ${activeStats.successRate || 0}%\n\n` +
                             `PERFORMA KEUANGAN\n` +
                             `Laba Bersih: ${f(results.labaBersih)}\n` +
                             `Total Profit: ${f(results.profitBasis)}\n` + 
-                            `Laba Hari Ini: ${f(results.profitKotor)}\n` + 
-                            `Selisih (Laba-Profit+Pot): ${f(results.selisihProfit)}\n\n` +
-                            `ASET UTAMA\n` +
-                            `BCA Bersih: ${f(results.bcaBersih)}\n` +
-                            `Potongan Akumulasi: ${f(results.totalPotonganAccumulated)}`;
+                            `Selisih: ${f(results.selisihProfit)}\n\n` +
+                            `ASET FINAL\n` +
+                            `Total Aset Riil: ${f(results.totalSisaSaldo)}\n` +
+                            `Bank Real (Nett): ${f(results.totalBankReal)}`;
 
             formData.append('caption', caption);
             formData.append('parse_mode', 'HTML');
@@ -505,34 +505,33 @@ const DashboardContent = ({ externalBalances, totalProfit, yesterdayBalances, su
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
                     <div className="bg-white p-5 md:p-8 rounded-[2.5rem] shadow-sm border border-slate-100">
                         <div className="flex justify-between items-center mb-6">
-                            <h3 className="text-[10px] font-black uppercase text-blue-600 flex items-center gap-2"><Wallet size={16} /> 1. Komponen Aset</h3>
+                            <h3 className="text-[10px] font-black uppercase text-blue-600 flex items-center gap-2"><Wallet size={16} /> 1. Komponen Aset & Info</h3>
                             <button onClick={() => setIsSupplierEdit(!isSupplierEdit)} className="text-[10px] font-black underline text-blue-700 uppercase flex items-center gap-1">
                                 <Edit3 size={12}/> {isSupplierEdit ? 'Done' : 'Edit Supplier'}
                             </button>
                         </div>
                         
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div className="relative">
-                                <StableInput id="saldoBCA" value={rekapData.saldoBCA} onChange={handleManualChange} label="Input Saldo BCA" icon={<CreditCard size={10}/>} color="text-blue-600" bg="bg-blue-50/30" border="focus:border-blue-500" disabled={isDayLocked} />
-                                <div className="mt-1 px-3 flex justify-between items-center">
-                                    <span className="text-[8px] font-black text-slate-400 uppercase">Agen: -{formatIDR(results.totalSaldoAgen)}</span>
-                                    <span className="text-[8px] font-black text-emerald-600 uppercase">Real: {formatIDR(results.bcaBersih)}</span>
+                            <StableInput id="saldoBCA" value={rekapData.saldoBCA} onChange={handleManualChange} label="BCA (Info)" icon={<CreditCard size={10}/>} color="text-slate-400" bg="bg-slate-50" border="focus:border-blue-200" disabled={isDayLocked} />
+                            <StableInput id="saldoBRI" value={rekapData.saldoBRI} onChange={handleManualChange} label="BRI (Info)" icon={<Landmark size={10}/>} color="text-slate-400" bg="bg-slate-50" border="focus:border-orange-200" disabled={isDayLocked} />
+
+                            <div className="col-span-1 sm:col-span-2 px-4 py-3 bg-blue-50/50 rounded-2xl flex flex-wrap justify-between items-center gap-3 border border-blue-100">
+                                <div className="flex flex-col">
+                                    <span className="text-[8px] font-black text-slate-400 uppercase tracking-tighter">Total Agen (Pengurang):</span>
+                                    <span className="text-[11px] font-black text-red-500">-{formatIDR(results.totalSaldoAgen)}</span>
+                                </div>
+                                <div className="flex flex-col items-end text-right">
+                                    <span className="text-[8px] font-black text-blue-600 uppercase tracking-tighter">Bank Real (Asset Nett):</span>
+                                    <span className="text-[11px] font-black text-blue-700">{formatIDR(results.totalBankReal)}</span>
                                 </div>
                             </div>
 
-                            <div className="relative">
-                                <StableInput id="saldoBRI" value={rekapData.saldoBRI} onChange={handleManualChange} label="Input Saldo BRI" icon={<Landmark size={10}/>} color="text-orange-500" bg="bg-orange-50/30" border="focus:border-orange-500" disabled={isDayLocked} />
-                            </div>
-                            <StableInput id="settledDigiflazz" value={rekapData.settledDigiflazz} onChange={handleManualChange} label="Settled Gross" icon={<Calculator size={10}/>} color="text-slate-500" bg="bg-slate-50" border="focus:border-slate-500" disabled={isDayLocked} />
+                            <StableInput id="settledDigiflazz" value={rekapData.settledDigiflazz} onChange={handleManualChange} label="Settled Gross" icon={<Calculator size={10}/>} color="text-emerald-600" bg="bg-emerald-50/30" border="focus:border-emerald-500" disabled={isDayLocked} />
                             <StableInput id="saldoDigiswitch" value={rekapData.saldoDigiswitch} onChange={handleManualChange} label="Digiswitch (Catatan)" icon={<Zap size={10}/>} color="text-slate-400" bg="bg-slate-50" border="focus:border-slate-300" disabled={isDayLocked} />
                             
                             <div className="col-span-1 sm:col-span-2 p-4 md:p-6 bg-slate-900 rounded-[2rem] text-white mt-2 relative overflow-hidden shadow-xl">
-                                {displaySupplierBalances.isLocked && <div className="absolute top-2 right-2 bg-blue-500 text-[7px] px-2 py-0.5 rounded font-black uppercase">Snapshot Locked</div>}
-                                
                                 <div className="flex flex-col sm:flex-row justify-between sm:items-center mb-4 border-b border-white/10 pb-4 gap-2">
-                                    <div className="flex flex-col">
-                                        <span className="text-[10px] font-black uppercase text-blue-400 tracking-wider">Total Asset Supplier</span>
-                                    </div>
+                                    <span className="text-[10px] font-black uppercase text-blue-400 tracking-wider">Total Asset Supplier</span>
                                     <span className="text-xl md:text-2xl font-black text-blue-400">{formatIDR(results.totalSupplierBalance)}</span>
                                 </div>
 
@@ -550,7 +549,6 @@ const DashboardContent = ({ externalBalances, totalProfit, yesterdayBalances, su
                                                 <tr>
                                                     <th className="p-3">Supplier</th>
                                                     <th className="p-3 text-right">Kemarin</th>
-                                                    <th className="p-3 text-right">Topup</th>
                                                     <th className="p-3 text-right">Pakai</th>
                                                     <th className="p-3 text-right">Realita</th>
                                                 </tr>
@@ -558,31 +556,16 @@ const DashboardContent = ({ externalBalances, totalProfit, yesterdayBalances, su
                                             <tbody className="divide-y divide-white/5">
                                                 {['DAS', 'AMC', 'HAO', 'NEWBIEZ', 'OASIS'].map(name => {
                                                     const data = displaySupplierBalances[name];
-                                                    const topup = rekapData.historyTopup?.filter(t => t.supplier === name).reduce((acc, curr) => acc + curr.amount, 0) || 0;
-                                                    const estimasi = data.kemarin + topup - data.pakai;
-                                                    const selisih = data.real - estimasi;
-
                                                     return (
                                                         <tr key={name}>
                                                             <td className="p-3 font-black text-blue-400 uppercase">{name}</td>
                                                             <td className="p-3 text-right text-slate-400">{formatIDR(data.kemarin)}</td>
-                                                            <td className="p-3 text-right text-emerald-500">+{formatIDR(topup)}</td>
                                                             <td className="p-3 text-right text-red-500">-{formatIDR(data.pakai)}</td>
                                                             <td className="p-3 text-right">
                                                                 {isSupplierEdit ? (
-                                                                    <input 
-                                                                        type="text" 
-                                                                        className="w-full bg-blue-500/20 text-white text-right font-black p-1 rounded outline-none border border-blue-500/50"
-                                                                        value={formatIDR(data.real)}
-                                                                        onChange={(e) => handleSupplierManualEdit(name, parseRawNumber(e.target.value))}
-                                                                    />
+                                                                    <input type="text" className="w-full bg-blue-500/20 text-white text-right font-black p-1 rounded outline-none border border-blue-500/50" value={formatIDR(data.real)} onChange={(e) => handleSupplierManualEdit(name, parseRawNumber(e.target.value))} />
                                                                 ) : (
-                                                                    <>
-                                                                        <div className="font-black text-white">{formatIDR(data.real)}</div>
-                                                                        <div className={`text-[8px] font-black ${selisih < 0 ? 'text-red-400' : 'text-emerald-400'}`}>
-                                                                            {selisih >= 0 ? '+' : ''}{formatIDR(selisih)}
-                                                                        </div>
-                                                                    </>
+                                                                    <span className="font-black text-white">{formatIDR(data.real)}</span>
                                                                 )}
                                                             </td>
                                                         </tr>
@@ -675,7 +658,7 @@ const DashboardContent = ({ externalBalances, totalProfit, yesterdayBalances, su
                     <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:scale-110 transition-transform"><Wallet size={120} /></div>
                     <div className="relative z-10 flex flex-col md:flex-row justify-between items-center gap-6 text-center md:text-left">
                         <div>
-                            <p className="text-blue-100 font-black text-[10px] md:text-xs uppercase tracking-[0.2em] mb-2">Laba Bersih (Aset - Modal)</p>
+                            <p className="text-blue-100 font-black text-[10px] md:text-xs uppercase tracking-[0.2em] mb-2">Laba Bersih (Aset Final - Modal)</p>
                             <h2 className="text-4xl md:text-6xl font-black tracking-tighter">{formatIDR(results.labaBersih)}</h2>
                         </div>
                         <div onClick={() => setIsAssetModalOpen(true)} className="bg-white/20 backdrop-blur-md p-6 rounded-[2.5rem] border border-white/30 text-center min-w-[240px] cursor-pointer hover:bg-white/40 transition-all active:scale-95 shadow-xl">
@@ -694,7 +677,6 @@ const DashboardContent = ({ externalBalances, totalProfit, yesterdayBalances, su
                             </div>
                             <h2 className="text-3xl font-black">{formatIDR(results.profitBasis)}</h2>
                             <p className="text-[10px] text-emerald-400 font-black uppercase mt-2">Laba Hari Ini: {formatIDR(results.profitKotor)}</p>
-                            <p className="text-[8px] text-slate-500 font-bold uppercase mt-1">Laba Kemarin: {formatIDR(labaBersihKemarin)}</p>
                         </div>
                         <div className="flex flex-col items-end gap-3">
                             <TrendingUp size={32} className={`${profitIsLocked ? 'text-blue-400' : 'text-emerald-400 animate-pulse'}`} />
@@ -709,7 +691,7 @@ const DashboardContent = ({ externalBalances, totalProfit, yesterdayBalances, su
                     <div onClick={() => setIsDiffModalOpen(true)} className="bg-white p-6 md:p-8 rounded-[2.5rem] border-2 border-indigo-100 shadow-sm flex justify-between items-center cursor-pointer hover:border-indigo-300 transition-all">
                         <div>
                             <div className="flex items-center gap-2 text-indigo-600 mb-1 font-black text-[10px] uppercase tracking-wider">
-                                <Scale size={14} /> Selisih (Laba - Profit + Potongan) {results.isManualDiff && <span className="bg-amber-100 text-amber-600 text-[7px] px-1 rounded">MANUAL</span>}
+                                <Scale size={14} /> Selisih (Laba - Profit) {results.isManualDiff && <span className="bg-amber-100 text-amber-600 text-[7px] px-1 rounded">MANUAL</span>}
                             </div>
                             <h2 className={`text-3xl font-black ${results.selisihProfit < 0 ? 'text-red-600' : 'text-emerald-600'}`}>{formatIDR(results.selisihProfit)}</h2>
                             <p className="text-[8px] mt-2 text-slate-400 font-bold uppercase">Potongan Akumulasi: {formatIDR(results.totalPotonganAccumulated)}</p>
@@ -727,7 +709,7 @@ const DashboardContent = ({ externalBalances, totalProfit, yesterdayBalances, su
                         <div className="bg-slate-50 p-6 md:p-8 border-b border-slate-100 flex justify-between items-center">
                             <div className="flex items-center gap-4">
                                 <div className="bg-blue-600 p-3 rounded-2xl text-white shadow-lg"><Wallet size={24} /></div>
-                                <h3 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Konsolidasi Aset</h3>
+                                <h3 className="text-xl font-black text-slate-800 uppercase tracking-tighter">Konsolidasi Aset Final</h3>
                             </div>
                             <button onClick={() => setIsAssetModalOpen(false)} className="p-3 bg-white shadow-sm rounded-full text-slate-400 hover:text-red-500"><X size={20}/></button>
                         </div>
@@ -735,41 +717,41 @@ const DashboardContent = ({ externalBalances, totalProfit, yesterdayBalances, su
                         <div className="p-6 md:p-8 max-h-[70vh] overflow-y-auto">
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <div className="space-y-3">
-                                    <h4 className="text-[9px] font-black text-slate-400 uppercase ml-2">Perbankan & Digital</h4>
+                                    <h4 className="text-[9px] font-black text-slate-400 uppercase ml-2">Aset Riil Dijumlahkan</h4>
                                     {[
-                                        { label: 'Bank BCA (Input)', val: rekapData.saldoBCA, icon: <CreditCard size={14}/>, color: 'text-slate-400' },
-                                        { label: 'Total Saldo Agen', val: results.totalSaldoAgen, icon: <ShieldAlert size={14}/>, color: 'text-red-500' },
-                                        { label: 'BCA Bersih (Real)', val: results.bcaBersih, icon: <CreditCard size={14}/>, color: 'text-blue-600' },
-                                        { label: 'Bank BRI (Input)', val: rekapData.saldoBRI, icon: <Landmark size={14}/>, color: 'text-orange-600' },
+                                        { label: 'Total Bank Real (Nett)', val: results.totalBankReal, icon: <CreditCard size={14}/>, color: 'text-blue-600' },
                                         { label: 'Settled Net', val: results.settledNetValue, icon: <Zap size={14}/>, color: 'text-yellow-600' },
-                                        { label: 'Digiswitch (Catatan)', val: rekapData.saldoDigiswitch, icon: <Zap size={14}/>, color: 'text-slate-400' },
+                                        { label: 'Sisa Digiflazz', val: rekapData.sisaDigiflazz, icon: <Calculator size={14}/>, color: 'text-slate-600' },
+                                        { label: 'Supplier DAS', val: displaySupplierBalances.DAS.real, icon: <ShieldAlert size={14}/>, color: 'text-blue-500' },
+                                        { label: 'Supplier AMC', val: displaySupplierBalances.AMC.real, icon: <ShieldAlert size={14}/>, color: 'text-blue-500' },
+                                        { label: 'Supplier HAO', val: displaySupplierBalances.HAO.real, icon: <ShieldAlert size={14}/>, color: 'text-blue-500' },
+                                        { label: 'Supplier NEWBIEZ', val: displaySupplierBalances.NEWBIEZ.real, icon: <ShieldAlert size={14}/>, color: 'text-blue-500' },
+                                        { label: 'Supplier OASIS', val: displaySupplierBalances.OASIS.real, icon: <ShieldAlert size={14}/>, color: 'text-blue-500' },
                                     ].map((item, idx) => (
-                                        <div key={idx} className="flex flex-col p-4 bg-white border border-slate-100 rounded-2xl">
-                                            <div className="flex items-center gap-2 mb-1">
-                                                <span className={`${item.color}`}>{item.icon}</span>
-                                                <span className="text-[10px] font-black text-slate-400 uppercase">{item.label}</span>
+                                        <div key={idx} className="flex items-center justify-between p-4 bg-blue-50/30 rounded-2xl border border-blue-100">
+                                            <div className="flex items-center gap-3">
+                                                <div className={`p-2 rounded-lg bg-white shadow-sm ${item.color}`}>{item.icon}</div>
+                                                <span className="text-[10px] font-black text-slate-600 uppercase">{item.label}</span>
                                             </div>
-                                            <span className={`text-lg font-black ${item.label.includes('Bersih') ? 'text-blue-600' : 'text-slate-800'}`}>{formatIDR(item.val)}</span>
+                                            <span className="text-sm font-black text-slate-800">{formatIDR(item.val)}</span>
                                         </div>
                                     ))}
                                 </div>
 
                                 <div className="space-y-3">
-                                    <h4 className="text-[9px] font-black text-slate-400 uppercase ml-2">Saldo Supplier</h4>
+                                    <h4 className="text-[9px] font-black text-slate-400 uppercase ml-2">Informasi Pendukung (Non-Asset)</h4>
                                     {[
-                                        { label: 'Digiflazz', val: rekapData.sisaDigiflazz, icon: <Calculator size={14}/>, color: 'text-slate-600' },
-                                        { label: 'DAS', val: displaySupplierBalances.DAS.real, icon: <ShieldAlert size={14}/>, color: 'text-blue-500' },
-                                        { label: 'AMC', val: displaySupplierBalances.AMC.real, icon: <ShieldAlert size={14}/>, color: 'text-blue-500' },
-                                        { label: 'HAO', val: displaySupplierBalances.HAO.real, icon: <ShieldAlert size={14}/>, color: 'text-blue-500' },
-                                        { label: 'NEWBIEZ', val: displaySupplierBalances.NEWBIEZ.real, icon: <ShieldAlert size={14}/>, color: 'text-blue-500' },
-                                        { label: 'OASIS', val: displaySupplierBalances.OASIS.real, icon: <ShieldAlert size={14}/>, color: 'text-blue-500' },
+                                        { label: 'Bank BCA (Input)', val: rekapData.saldoBCA, icon: <CreditCard size={14}/>, color: 'text-slate-400' },
+                                        { label: 'Bank BRI (Input)', val: rekapData.saldoBRI, icon: <Landmark size={14}/>, color: 'text-slate-400' },
+                                        { label: 'Total Saldo Agen', val: results.totalSaldoAgen, icon: <ShieldAlert size={14}/>, color: 'text-red-400' },
+                                        { label: 'Digiswitch (Catatan)', val: rekapData.saldoDigiswitch, icon: <Zap size={14}/>, color: 'text-slate-400' },
                                     ].map((item, idx) => (
-                                        <div key={idx} className="flex items-center justify-between p-4 bg-slate-50/50 rounded-2xl">
-                                            <div className="flex items-center gap-3">
-                                                <div className={`p-2 rounded-lg bg-white ${item.color}`}>{item.icon}</div>
-                                                <span className="text-[10px] font-black text-slate-600 uppercase">{item.label}</span>
+                                        <div key={idx} className="flex flex-col p-4 bg-slate-50 border border-slate-100 rounded-2xl opacity-70">
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <span className={`${item.color}`}>{item.icon}</span>
+                                                <span className="text-[10px] font-black text-slate-400 uppercase">{item.label}</span>
                                             </div>
-                                            <span className="text-sm font-black text-slate-800">{formatIDR(item.val)}</span>
+                                            <span className="text-sm font-black text-slate-500">{formatIDR(item.val)}</span>
                                         </div>
                                     ))}
                                 </div>
@@ -777,10 +759,7 @@ const DashboardContent = ({ externalBalances, totalProfit, yesterdayBalances, su
                         </div>
 
                         <div className="p-8 flex flex-col gap-3">
-                            <button 
-                                onClick={sendToTelegram} 
-                                className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest flex items-center justify-center gap-2 hover:bg-emerald-700 transition-all shadow-lg active:scale-95"
-                            >
+                            <button onClick={sendToTelegram} className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest flex items-center justify-center gap-2 hover:bg-emerald-700 transition-all shadow-lg active:scale-95">
                                 <Send size={16}/> Kirim Laporan Ke Telegram (Excel)
                             </button>
                             <button onClick={() => setIsAssetModalOpen(false)} className="w-full py-4 bg-slate-100 text-slate-600 rounded-2xl font-black uppercase text-[10px] tracking-widest">Tutup</button>
@@ -795,27 +774,19 @@ const DashboardContent = ({ externalBalances, totalProfit, yesterdayBalances, su
                     <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-md" onClick={() => setIsDiffModalOpen(false)} />
                     <div className="relative bg-white w-full max-w-md rounded-[3rem] p-8 shadow-2xl">
                         <h3 className="text-xl font-black mb-6 flex items-center gap-3 uppercase text-indigo-600"><Scale size={20}/> Edit & Analisis</h3>
-                        
-                        <div className="mb-6">
-                            <label className="text-[10px] font-black uppercase text-slate-400 mb-2 block">Koreksi Selisih Manual</label>
-                            <input 
-                                type="text"
-                                value={rekapData.manualDifference === null ? '' : formatIDR(rekapData.manualDifference)}
-                                onChange={(e) => handleManualChange('manualDifference', parseRawNumber(e.target.value))}
-                                className="w-full p-4 bg-indigo-50 rounded-xl border border-indigo-100 font-black text-indigo-600 outline-none"
-                                placeholder="Masukkan nominal jika selisih tidak sesuai..."
-                            />
-                            {rekapData.manualDifference !== null && (
-                                <button onClick={() => handleManualChange('manualDifference', null)} className="text-[8px] font-black text-red-500 uppercase mt-1 underline">Reset ke Otomatis</button>
-                            )}
+                        <div className="mb-6 text-center bg-indigo-50 p-4 rounded-2xl">
+                             <p className="text-[10px] font-black text-indigo-400 uppercase mb-1">Selisih Terdeteksi</p>
+                             <h4 className={`text-2xl font-black ${results.selisihProfit < 0 ? 'text-red-500' : 'text-indigo-600'}`}>{formatIDR(results.selisihProfit)}</h4>
                         </div>
-
+                        <div className="mb-6">
+                            <label className="text-[10px] font-black uppercase text-slate-400 mb-2 block">Koreksi Selisih Manual (Opsional)</label>
+                            <input type="text" value={rekapData.manualDifference === null ? '' : formatIDR(rekapData.manualDifference)} onChange={(e) => handleManualChange('manualDifference', parseRawNumber(e.target.value))} className="w-full p-4 bg-slate-50 rounded-xl border border-slate-200 font-black text-slate-700 outline-none" placeholder="Masukkan nominal jika ingin koreksi..." />
+                        </div>
                         <div>
                             <label className="text-[10px] font-black uppercase text-slate-400 mb-2 block">Catatan Analisis</label>
                             <textarea value={rekapData.catatanAnalisisLainnya} onChange={(e) => handleManualChange('catatanAnalisisLainnya', e.target.value)} placeholder="Tulis alasan jika ada selisih saldo..." className="w-full p-4 bg-slate-50 rounded-xl border border-slate-200 text-xs font-bold min-h-[140px] resize-none outline-none"/>
                         </div>
-
-                        <button onClick={() => { handleCloudSync(); setIsDiffModalOpen(false); }} className="w-full mt-6 py-4 bg-slate-900 text-white rounded-2xl font-black uppercase text-[10px] flex items-center justify-center gap-2"><Save size={16}/> Simpan Perubahan</button>
+                        <button onClick={() => { handleCloudSync(); setIsDiffModalOpen(false); }} className="w-full mt-6 py-4 bg-slate-900 text-white rounded-2xl font-black uppercase text-[10px] flex items-center justify-center gap-2"><Save size={16}/> Simpan</button>
                     </div>
                 </div>
             )}
@@ -824,13 +795,13 @@ const DashboardContent = ({ externalBalances, totalProfit, yesterdayBalances, su
             {showLockConfirm && (
                 <div className="fixed inset-0 z-[130] flex items-center justify-center p-4">
                     <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
-                    <div className="relative bg-white p-8 rounded-[2.5rem] max-w-sm w-full text-center">
+                    <div className="relative bg-white p-8 rounded-[2.5rem] max-w-sm w-full text-center shadow-2xl">
                         <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-4"><Lock size={32}/></div>
                         <h3 className="text-lg font-black mb-2 uppercase">Kunci Laporan?</h3>
-                        <p className="text-[10px] text-slate-500 mb-6 font-bold uppercase">Seluruh data aset, supplier, dan statistik akan dibekukan permanen untuk hari ini.</p>
+                        <p className="text-[10px] text-slate-500 mb-6 font-bold uppercase">Data akan dibekukan permanen untuk menjaga integritas rekap harian.</p>
                         <div className="flex gap-3">
                             <button onClick={() => setShowLockConfirm(false)} className="flex-1 py-4 bg-slate-100 rounded-xl font-black text-[10px] uppercase">Batal</button>
-                            <button onClick={handleConfirmLock} className="flex-1 py-4 bg-blue-600 text-white rounded-xl font-black text-[10px] uppercase">Ya, Kunci!</button>
+                            <button onClick={handleConfirmLock} className="flex-1 py-4 bg-blue-600 text-white rounded-xl font-black text-[10px] uppercase">Kunci!</button>
                         </div>
                     </div>
                 </div>
